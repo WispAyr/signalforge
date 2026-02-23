@@ -1,78 +1,173 @@
 import { EventEmitter } from 'events';
+import { db } from '../services/database.js';
 import type { LogEntry, LogbookStats, ADIFField } from '@signalforge/shared';
 
+function rowToEntry(row: any): LogEntry {
+  return {
+    id: row.id,
+    callsign: row.callsign,
+    frequency: row.frequency,
+    band: row.band,
+    mode: row.mode,
+    rstSent: row.rst_sent,
+    rstReceived: row.rst_received,
+    dateTimeOn: row.date_time_on,
+    dateTimeOff: row.date_time_off || undefined,
+    name: row.name || undefined,
+    qth: row.qth || undefined,
+    gridSquare: row.grid_square || undefined,
+    power: row.power || undefined,
+    notes: row.notes || undefined,
+    qslSent: row.qsl_sent || 'N',
+    qslReceived: row.qsl_received || 'N',
+    qslVia: row.qsl_via || undefined,
+    eqsl: !!row.eqsl,
+    lotw: !!row.lotw,
+    operator: row.operator || undefined,
+    myCallsign: row.my_callsign || undefined,
+    myGrid: row.my_grid || undefined,
+    contestId: row.contest_id || undefined,
+    serialSent: row.serial_sent || undefined,
+    serialReceived: row.serial_received || undefined,
+    recordingId: row.recording_id || undefined,
+    waterfallId: row.waterfall_id || undefined,
+    tags: JSON.parse(row.tags || '[]'),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 export class LogbookService extends EventEmitter {
-  private entries: LogEntry[] = [];
+  private insertStmt = db.prepare(`
+    INSERT INTO logbook (id, callsign, frequency, band, mode, rst_sent, rst_received,
+      date_time_on, date_time_off, name, qth, grid_square, power, notes,
+      qsl_sent, qsl_received, qsl_via, eqsl, lotw, operator, my_callsign, my_grid,
+      contest_id, serial_sent, serial_received, recording_id, waterfall_id, tags,
+      created_at, updated_at)
+    VALUES (@id, @callsign, @frequency, @band, @mode, @rst_sent, @rst_received,
+      @date_time_on, @date_time_off, @name, @qth, @grid_square, @power, @notes,
+      @qsl_sent, @qsl_received, @qsl_via, @eqsl, @lotw, @operator, @my_callsign, @my_grid,
+      @contest_id, @serial_sent, @serial_received, @recording_id, @waterfall_id, @tags,
+      @created_at, @updated_at)
+  `);
 
   addEntry(entry: Omit<LogEntry, 'id' | 'createdAt' | 'updatedAt'>): LogEntry {
-    const e: LogEntry = {
-      ...entry,
-      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      tags: entry.tags || [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+    const now = Date.now();
+    const id = `log-${now}-${Math.random().toString(36).slice(2, 6)}`;
+    const row = {
+      id,
+      callsign: entry.callsign,
+      frequency: entry.frequency,
+      band: entry.band,
+      mode: entry.mode,
+      rst_sent: entry.rstSent || '59',
+      rst_received: entry.rstReceived || '59',
+      date_time_on: entry.dateTimeOn || now,
+      date_time_off: entry.dateTimeOff || null,
+      name: entry.name || null,
+      qth: entry.qth || null,
+      grid_square: entry.gridSquare || null,
+      power: entry.power || null,
+      notes: entry.notes || null,
+      qsl_sent: entry.qslSent || 'N',
+      qsl_received: entry.qslReceived || 'N',
+      qsl_via: entry.qslVia || null,
+      eqsl: entry.eqsl ? 1 : 0,
+      lotw: entry.lotw ? 1 : 0,
+      operator: entry.operator || null,
+      my_callsign: entry.myCallsign || null,
+      my_grid: entry.myGrid || null,
+      contest_id: entry.contestId || null,
+      serial_sent: entry.serialSent || null,
+      serial_received: entry.serialReceived || null,
+      recording_id: entry.recordingId || null,
+      waterfall_id: entry.waterfallId || null,
+      tags: JSON.stringify(entry.tags || []),
+      created_at: now,
+      updated_at: now,
     };
-    this.entries.unshift(e);
+    this.insertStmt.run(row);
+    const e = rowToEntry({ ...row, created_at: now, updated_at: now });
     this.emit('entry_added', e);
     return e;
   }
 
   updateEntry(id: string, updates: Partial<LogEntry>): LogEntry | null {
-    const entry = this.entries.find(e => e.id === id);
-    if (!entry) return null;
-    Object.assign(entry, updates, { updatedAt: Date.now() });
+    const existing = db.prepare('SELECT * FROM logbook WHERE id = ?').get(id) as any;
+    if (!existing) return null;
+    const now = Date.now();
+    const sets: string[] = ['updated_at = ?'];
+    const vals: any[] = [now];
+    const fieldMap: Record<string, string> = {
+      callsign: 'callsign', frequency: 'frequency', band: 'band', mode: 'mode',
+      rstSent: 'rst_sent', rstReceived: 'rst_received', dateTimeOn: 'date_time_on',
+      dateTimeOff: 'date_time_off', name: 'name', qth: 'qth', gridSquare: 'grid_square',
+      power: 'power', notes: 'notes', qslSent: 'qsl_sent', qslReceived: 'qsl_received',
+      qslVia: 'qsl_via', operator: 'operator', myCallsign: 'my_callsign', myGrid: 'my_grid',
+      contestId: 'contest_id', serialSent: 'serial_sent', serialReceived: 'serial_received',
+    };
+    for (const [key, col] of Object.entries(fieldMap)) {
+      if ((updates as any)[key] !== undefined) {
+        sets.push(`${col} = ?`);
+        vals.push((updates as any)[key]);
+      }
+    }
+    if (updates.eqsl !== undefined) { sets.push('eqsl = ?'); vals.push(updates.eqsl ? 1 : 0); }
+    if (updates.lotw !== undefined) { sets.push('lotw = ?'); vals.push(updates.lotw ? 1 : 0); }
+    if (updates.tags !== undefined) { sets.push('tags = ?'); vals.push(JSON.stringify(updates.tags)); }
+    vals.push(id);
+    db.prepare(`UPDATE logbook SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+    const updated = db.prepare('SELECT * FROM logbook WHERE id = ?').get(id) as any;
+    const entry = rowToEntry(updated);
     this.emit('entry_updated', entry);
     return entry;
   }
 
   deleteEntry(id: string): boolean {
-    const idx = this.entries.findIndex(e => e.id === id);
-    if (idx === -1) return false;
-    this.entries.splice(idx, 1);
-    return true;
+    const result = db.prepare('DELETE FROM logbook WHERE id = ?').run(id);
+    return result.changes > 0;
   }
 
   getEntries(opts?: { callsign?: string; band?: string; mode?: string; startDate?: number; endDate?: number; search?: string; limit?: number; offset?: number }): LogEntry[] {
-    let result = this.entries;
-    if (opts?.callsign) result = result.filter(e => e.callsign.toUpperCase().includes(opts.callsign!.toUpperCase()));
-    if (opts?.band) result = result.filter(e => e.band === opts.band);
-    if (opts?.mode) result = result.filter(e => e.mode === opts.mode);
-    if (opts?.startDate) result = result.filter(e => e.dateTimeOn >= opts.startDate!);
-    if (opts?.endDate) result = result.filter(e => e.dateTimeOn <= opts.endDate!);
+    let sql = 'SELECT * FROM logbook WHERE 1=1';
+    const params: any[] = [];
+    if (opts?.callsign) { sql += ' AND callsign LIKE ?'; params.push(`%${opts.callsign}%`); }
+    if (opts?.band) { sql += ' AND band = ?'; params.push(opts.band); }
+    if (opts?.mode) { sql += ' AND mode = ?'; params.push(opts.mode); }
+    if (opts?.startDate) { sql += ' AND date_time_on >= ?'; params.push(opts.startDate); }
+    if (opts?.endDate) { sql += ' AND date_time_on <= ?'; params.push(opts.endDate); }
     if (opts?.search) {
-      const s = opts.search.toLowerCase();
-      result = result.filter(e => e.callsign.toLowerCase().includes(s) || e.notes?.toLowerCase().includes(s) || e.name?.toLowerCase().includes(s));
+      sql += ' AND (callsign LIKE ? OR notes LIKE ? OR name LIKE ?)';
+      const s = `%${opts.search}%`;
+      params.push(s, s, s);
     }
-    const offset = opts?.offset || 0;
-    const limit = opts?.limit || 100;
-    return result.slice(offset, offset + limit);
+    sql += ' ORDER BY date_time_on DESC LIMIT ? OFFSET ?';
+    params.push(opts?.limit || 100, opts?.offset || 0);
+    return (db.prepare(sql).all(...params) as any[]).map(rowToEntry);
   }
 
   getEntry(id: string): LogEntry | undefined {
-    return this.entries.find(e => e.id === id);
+    const row = db.prepare('SELECT * FROM logbook WHERE id = ?').get(id) as any;
+    return row ? rowToEntry(row) : undefined;
   }
 
   getStats(): LogbookStats {
-    const callsigns = new Set(this.entries.map(e => e.callsign));
+    const total = (db.prepare('SELECT COUNT(*) as c FROM logbook').get() as any).c;
+    const uniqueCallsigns = (db.prepare('SELECT COUNT(DISTINCT callsign) as c FROM logbook').get() as any).c;
+    const bandRows = db.prepare('SELECT band, COUNT(*) as c FROM logbook GROUP BY band').all() as any[];
+    const modeRows = db.prepare('SELECT mode, COUNT(*) as c FROM logbook GROUP BY mode').all() as any[];
+    const recent = (db.prepare('SELECT * FROM logbook ORDER BY date_time_on DESC LIMIT 10').all() as any[]).map(rowToEntry);
     const bandBreakdown: Record<string, number> = {};
+    for (const r of bandRows) bandBreakdown[r.band] = r.c;
     const modeBreakdown: Record<string, number> = {};
-    for (const e of this.entries) {
-      bandBreakdown[e.band] = (bandBreakdown[e.band] || 0) + 1;
-      modeBreakdown[e.mode] = (modeBreakdown[e.mode] || 0) + 1;
-    }
-    return {
-      totalContacts: this.entries.length,
-      uniqueCallsigns: callsigns.size,
-      uniqueCountries: 0, // Would need DXCC lookup
-      bandBreakdown,
-      modeBreakdown,
-      recentContacts: this.entries.slice(0, 10),
-    };
+    for (const r of modeRows) modeBreakdown[r.mode] = r.c;
+    return { totalContacts: total, uniqueCallsigns, uniqueCountries: 0, bandBreakdown, modeBreakdown, recentContacts: recent };
   }
 
   exportADIF(): string {
+    const entries = (db.prepare('SELECT * FROM logbook ORDER BY date_time_on').all() as any[]).map(rowToEntry);
     let adif = `<ADIF_VER:5>3.1.4\n<PROGRAMID:11>SignalForge\n<PROGRAMVERSION:5>0.6.0\n<EOH>\n\n`;
-    for (const e of this.entries) {
+    for (const e of entries) {
       const dt = new Date(e.dateTimeOn);
       const date = dt.toISOString().slice(0, 10).replace(/-/g, '');
       const time = dt.toISOString().slice(11, 15).replace(':', '');
@@ -101,33 +196,35 @@ export class LogbookService extends EventEmitter {
   importADIF(adifContent: string): number {
     const records = adifContent.split(/<EOR>/gi);
     let imported = 0;
-    for (const record of records) {
-      if (!record.trim() || record.includes('<EOH>')) continue;
-      const fields = this.parseADIFRecord(record);
-      if (!fields.CALL) continue;
-
-      const freq = fields.FREQ ? parseFloat(fields.FREQ) * 1e6 : 14200000;
-      this.addEntry({
-        callsign: fields.CALL,
-        frequency: freq,
-        band: fields.BAND || this.freqToBand(freq),
-        mode: fields.MODE || 'SSB',
-        rstSent: fields.RST_SENT || '59',
-        rstReceived: fields.RST_RCVD || '59',
-        dateTimeOn: fields.QSO_DATE ? this.parseADIFDate(fields.QSO_DATE, fields.TIME_ON) : Date.now(),
-        name: fields.NAME,
-        qth: fields.QTH,
-        gridSquare: fields.GRIDSQUARE,
-        power: fields.TX_PWR ? parseFloat(fields.TX_PWR) : undefined,
-        notes: fields.COMMENT,
-        qslSent: (fields.QSL_SENT as LogEntry['qslSent']) || 'N',
-        qslReceived: (fields.QSL_RCVD as LogEntry['qslReceived']) || 'N',
-        myCallsign: fields.STATION_CALLSIGN,
-        myGrid: fields.MY_GRIDSQUARE,
-        tags: [],
-      });
-      imported++;
-    }
+    const insertMany = db.transaction(() => {
+      for (const record of records) {
+        if (!record.trim() || record.includes('<EOH>')) continue;
+        const fields = this.parseADIFRecord(record);
+        if (!fields.CALL) continue;
+        const freq = fields.FREQ ? parseFloat(fields.FREQ) * 1e6 : 14200000;
+        this.addEntry({
+          callsign: fields.CALL,
+          frequency: freq,
+          band: fields.BAND || this.freqToBand(freq),
+          mode: fields.MODE || 'SSB',
+          rstSent: fields.RST_SENT || '59',
+          rstReceived: fields.RST_RCVD || '59',
+          dateTimeOn: fields.QSO_DATE ? this.parseADIFDate(fields.QSO_DATE, fields.TIME_ON) : Date.now(),
+          name: fields.NAME,
+          qth: fields.QTH,
+          gridSquare: fields.GRIDSQUARE,
+          power: fields.TX_PWR ? parseFloat(fields.TX_PWR) : undefined,
+          notes: fields.COMMENT,
+          qslSent: (fields.QSL_SENT as LogEntry['qslSent']) || 'N',
+          qslReceived: (fields.QSL_RCVD as LogEntry['qslReceived']) || 'N',
+          myCallsign: fields.STATION_CALLSIGN,
+          myGrid: fields.MY_GRIDSQUARE,
+          tags: [],
+        });
+        imported++;
+      }
+    });
+    insertMany();
     return imported;
   }
 
