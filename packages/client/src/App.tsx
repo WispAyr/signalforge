@@ -8,8 +8,11 @@ import { StatusBar } from './components/StatusBar';
 import { Dashboard } from './components/Dashboard';
 import { SettingsPage } from './components/SettingsPage';
 import { SignalGuide } from './components/SignalGuide';
+import { SDRPanel } from './components/SDRPanel';
+import { SpectrumAnalyzer } from './components/SpectrumAnalyzer';
+import { ObservationScheduler } from './components/ObservationScheduler';
 
-export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'split' | 'signals' | 'settings';
+export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'sdr' | 'analyzer' | 'scheduler' | 'signals' | 'settings';
 
 export const App: React.FC = () => {
   const [activeView, setActiveView] = useState<View>('dashboard');
@@ -33,9 +36,11 @@ export const App: React.FC = () => {
         case '2': changeView('flow'); break;
         case '3': changeView('waterfall'); break;
         case '4': changeView('map'); break;
-        case '5': changeView('split'); break;
-        case '6': changeView('signals'); break;
-        case '7': changeView('settings'); break;
+        case '5': changeView('sdr'); break;
+        case '6': changeView('analyzer'); break;
+        case '7': changeView('scheduler'); break;
+        case '8': changeView('signals'); break;
+        case '9': changeView('settings'); break;
       }
     };
     window.addEventListener('keydown', handler);
@@ -54,14 +59,11 @@ export const App: React.FC = () => {
           {activeView === 'flow' && <FlowEditor />}
           {activeView === 'waterfall' && <WaterfallView />}
           {activeView === 'map' && <MapView />}
+          {activeView === 'sdr' && <SDRPanel />}
+          {activeView === 'analyzer' && <SpectrumAnalyzer />}
+          {activeView === 'scheduler' && <ObservationScheduler />}
           {activeView === 'signals' && <SignalGuide />}
           {activeView === 'settings' && <SettingsPage />}
-          {activeView === 'split' && (
-            <div className="h-full grid grid-rows-2 gap-px bg-forge-border">
-              <WaterfallView />
-              <FlowEditor />
-            </div>
-          )}
         </main>
       </div>
 

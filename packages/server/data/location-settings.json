@@ -7,13 +7,13 @@
     "source": "manual",
     "lastUpdated": "2026-02-23T01:38:46.189Z"
   },
-  "source": "manual",
+  "source": "starlink",
   "gps": {
     "enabled": false,
     "type": "none"
   },
   "starlink": {
-    "enabled": false,
+    "enabled": true,
     "host": "192.168.100.1",
     "pollIntervalMs": 30000
   }

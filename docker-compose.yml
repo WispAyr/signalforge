@@ -1,0 +1,90 @@
+# ============================================================================
+# SignalForge — Docker Compose
+# 
+# Usage:
+#   docker compose up              # Core only
+#   docker compose --profile sdr up   # With RTL-TCP
+#   docker compose --profile full up  # Everything
+# ============================================================================
+
+services:
+  # Core SignalForge application
+  signalforge:
+    build: .
+    container_name: signalforge
+    ports:
+      - "${SF_PORT:-3401}:3401"
+    environment:
+      - PORT=3401
+      - NODE_ENV=production
+      - RTL_TCP_HOST=${RTL_TCP_HOST:-}
+      - RTL_TCP_PORT=${RTL_TCP_PORT:-1234}
+      - MQTT_BROKER=${MQTT_BROKER:-}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - ROTCTLD_HOST=${ROTCTLD_HOST:-}
+      - ROTCTLD_PORT=${ROTCTLD_PORT:-4533}
+      - GPSD_HOST=${GPSD_HOST:-}
+      - GPSD_PORT=${GPSD_PORT:-2947}
+    volumes:
+      - signalforge-data:/app/data
+      - signalforge-recordings:/app/recordings
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3401/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # RTL-TCP server (requires USB SDR dongle passed through)
+  rtl_tcp:
+    image: kosma/rtl-tcp
+    container_name: signalforge-rtltcp
+    profiles: ["sdr", "full"]
+    ports:
+      - "1234:1234"
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    privileged: true
+    command: ["-a", "0.0.0.0", "-p", "1234", "-s", "2400000"]
+    restart: unless-stopped
+
+  # GPSD — GPS daemon for location
+  gpsd:
+    image: jdelaporte/gpsd
+    container_name: signalforge-gpsd
+    profiles: ["gps", "full"]
+    ports:
+      - "2947:2947"
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    command: ["-G", "-n", "/dev/ttyUSB0"]
+    restart: unless-stopped
+
+  # Hamlib rotctld — antenna rotator control
+  rotctld:
+    image: ghcr.io/kng/hamlib:latest
+    container_name: signalforge-rotctld
+    profiles: ["rotator", "full"]
+    ports:
+      - "4533:4533"
+    command: ["rotctld", "-m", "1", "-t", "4533", "-T", "0.0.0.0"]
+    restart: unless-stopped
+
+  # MQTT Broker (Mosquitto)
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: signalforge-mqtt
+    profiles: ["mqtt", "full"]
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mqtt-data:/mosquitto/data
+      - mqtt-log:/mosquitto/log
+    restart: unless-stopped
+
+volumes:
+  signalforge-data:
+  signalforge-recordings:
+  mqtt-data:
+  mqtt-log:

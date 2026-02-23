@@ -40,6 +40,8 @@ const NODE_PALETTE: NodePaletteItem[] = [
   // Output
   { type: 'audio_out', name: 'Audio Out', category: 'output', icon: '🔈', color: '#6a6a8a' },
   { type: 'recorder', name: 'Recorder', category: 'output', icon: '⏺️', color: '#6a6a8a' },
+  { type: 'mqtt_sink', name: 'MQTT Sink', category: 'output', icon: '🔗', color: '#6a6a8a' },
+  { type: 'mqtt_source', name: 'MQTT Source', category: 'source', icon: '🔗', color: '#00e5ff' },
   // Satellite
   { type: 'sat_tracker', name: 'Sat Tracker', category: 'satellite', icon: '🛰️', color: '#00b8d4' },
   { type: 'doppler', name: 'Doppler', category: 'satellite', icon: '🎯', color: '#00b8d4' },
