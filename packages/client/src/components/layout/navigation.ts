@@ -39,6 +39,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: 'dsp', label: 'WebGPU DSP', icon: '⚡' },
       { id: 'propagation', label: 'Propagation', icon: '☀' },
       { id: 'dxcluster', label: 'DX Cluster', icon: '🌍' },
+      { id: 'websdr', label: 'WebSDR', icon: '🌐' },
     ],
   },
   {

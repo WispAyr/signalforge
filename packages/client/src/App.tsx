@@ -58,11 +58,12 @@ const HistoryView = lazy(() => import('./components/HistoryView').then(m => ({ d
 const IntegrationsView = lazy(() => import('./components/IntegrationsView').then(m => ({ default: m.IntegrationsView })));
 const EquipmentView = lazy(() => import('./components/EquipmentView').then(m => ({ default: m.EquipmentView })));
 const CinematicView = lazy(() => import('./components/CinematicView').then(m => ({ default: m.CinematicView })));
+const WebSDRView = lazy(() => import('./components/WebSDRView').then(m => ({ default: m.WebSDRView })));
 
 // Node palette sidebar (only for flow editor)
 const FlowSidebar = lazy(() => import('./components/Sidebar').then(m => ({ default: m.Sidebar })));
 
-export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'sdr' | 'analyzer' | 'scheduler' | 'signals' | 'settings' | 'scanner' | 'timeline' | 'telemetry' | 'plugins' | 'edge' | 'satnogs' | 'geofence' | 'voice' | 'propagation' | 'logbook' | 'analytics' | 'dxcluster' | 'audio' | 'rtl433' | 'pager' | 'subghz' | 'sstv' | 'meters' | 'wifi' | 'bluetooth' | 'tscm' | 'meshtastic' | 'numberstations' | 'fieldmode' | 'vdl2' | 'globe' | 'dsp' | 'narrator' | 'community' | 'academy' | 'history' | 'integrations' | 'equipment' | 'cinematic';
+export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'sdr' | 'analyzer' | 'scheduler' | 'signals' | 'settings' | 'scanner' | 'timeline' | 'telemetry' | 'plugins' | 'edge' | 'satnogs' | 'geofence' | 'voice' | 'propagation' | 'logbook' | 'analytics' | 'dxcluster' | 'audio' | 'rtl433' | 'pager' | 'subghz' | 'sstv' | 'meters' | 'wifi' | 'bluetooth' | 'tscm' | 'meshtastic' | 'numberstations' | 'fieldmode' | 'vdl2' | 'globe' | 'dsp' | 'narrator' | 'community' | 'academy' | 'history' | 'integrations' | 'equipment' | 'cinematic' | 'websdr';
 
 // Loading skeleton for lazy views
 const ViewLoader: React.FC = () => (
@@ -173,6 +174,7 @@ export const App: React.FC = () => {
       case 'integrations': return <IntegrationsView />;
       case 'equipment': return <EquipmentView />;
       case 'cinematic': return <CinematicView />;
+      case 'websdr': return <WebSDRView />;
       case 'settings': return <SettingsPage />;
       default: return <Dashboard onNavigate={changeView} />;
     }
