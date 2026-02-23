@@ -29,10 +29,10 @@
 
 | Feature | Status | What's needed to make it real |
 |---------|--------|-------------------------------|
-| **ADS-B Aircraft** | 🟡 Demo fallback | Install dump1090, connect RTL-SDR on 1090MHz. Code is ready. |
-| **AIS Vessels** | 🟡 Demo data | Need AIS decoder (rtl_ais or similar) feeding port. Parser exists but no real source. |
+| **ADS-B Aircraft** | ✅ REAL | OpenSky Network live feed as fallback from local dump1090. Real aircraft data out of the box. |
+| **AIS Vessels** | ✅ REAL | Finnish Digitraffic live API feed as fallback from local rtl_ais. Real vessel data out of the box. |
 | **ACARS Messages** | 🟡 Demo data | Need acarsdec running. Could also pull from AirWave project. |
-| **APRS Stations** | 🟡 Demo data | Need direwolf or APRS-IS connection. Parser structure exists. |
+| **APRS Stations** | ✅ REAL | Live APRS-IS connection (rotate.aprs2.net:14580), 2000 station cap, sortable/filterable table view |
 | **IQ Streaming** | 🟡 Demo sine waves | Real rtl_tcp code works — just need hardware connected. Plug in RTL-SDR → real data. |
 | **Observation Scheduler** | 🟡 Framework only | Scheduling logic exists, needs SDR+rotator connected to actually record |
 
@@ -52,7 +52,7 @@
 | **VDL2** | 🟠 Stub | Demo messages. Needs: dumpvdl2 subprocess integration |
 | **Digital Voice (DMR/D-STAR/C4FM)** | 🟠 Stub | Demo data. Needs: DSD/DSD+ integration (very complex DSP) |
 | **Number Stations** | 🟠 Static DB | Database is real data but "now on air" is simulated scheduling |
-| **DX Cluster** | 🟠 Stub | Demo spots. Needs: telnet client to DX cluster nodes |
+| **DX Cluster** | ✅ REAL | Telnet-style feed integration working |
 | **Audio Streaming** | 🟠 Framework | Web Audio scaffolding. Needs: real IQ→audio pipeline connected |
 | **Aaronia Spectran** | 🟠 Stub | API client structure. Needs: real Aaronia hardware + RTSA-Suite running |
 
@@ -70,12 +70,12 @@
 | **Integration Hub** | 🔴 UI only | Config forms exist. Needs: actual integration code per service |
 | **Equipment Manager** | 🔴 Static data | Hardware database is static. No real device detection. |
 | **Cinematic Mode** | 🔴 Basic | Auto-cycle exists but needs polished visualizations |
-| **Geo-fencing** | 🔴 UI only | Zone drawing exists. Needs: real-time entity checking against zones |
+| **Geo-fencing** | ✅ REAL | Zone drawing + real-time entity checking via rules engine (geofence enter/exit conditions) |
 | **Waterfall Recording** | 🔴 Framework | Start/stop UI. Needs: actual data capture and storage |
 | **Plugin Loader** | 🔴 Static | 4 "built-in plugins" are hardcoded, not actually loadable externally |
 | **Edge Node Package** | 🔴 Scaffolding | Package exists but minimal — needs real SDR/GPS integration code |
 | **Offline/Field Mode** | 🔴 SW only | Service worker caches app shell. No real data bundling. |
-| **Logbook Persistence** | 🔴 In-memory | No database — data lost on restart |
+| **Logbook Persistence** | ✅ REAL | SQLite persistence for logbook, recordings, settings, geofences, bookmarks |
 
 ## Priority Work Plan
 

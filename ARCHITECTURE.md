@@ -180,3 +180,114 @@ All DSP runs client-side in the browser. The server is a thin bridge to hardware
 | SDR Access | node-usb / native addons | Direct hardware control |
 | Build | Vite + Turborepo | Fast builds, monorepo |
 | Styling | Tailwind CSS + custom | Utility-first + sci-fi theme |
+
+---
+
+## Rules & Triggers Engine
+
+The rules engine provides event-driven automation with a full condition/action pipeline, persisted to SQLite.
+
+### Architecture
+
+```
+Events (APRS, ADS-B, AIS, system) 
+    │
+    ▼
+Rule Engine (server/src/rules/engine.ts)
+    │
+    ├── Condition Evaluator (18 condition types)
+    │   ├── Signal conditions: frequency range, mode match, signal strength
+    │   ├── Entity conditions: callsign match, geofence enter/exit, speed threshold
+    │   ├── Temporal conditions: time of day, schedule, cooldown
+    │   ├── System conditions: decoder status, connection state, resource usage
+    │   └── Compound: AND/OR/NOT grouping
+    │
+    └── Action Executor (10 action types)
+        ├── Notify: WebSocket broadcast, UI toast, sound alert
+        ├── Record: start/stop recording, snapshot
+        ├── Control: retune SDR, enable/disable decoder
+        ├── External: MQTT publish, webhook, email
+        └── Flow: trigger DataFlow pipeline
+```
+
+### Storage
+- Rules stored in SQLite (`rules` table)
+- Event log for audit trail
+- Entity tracking with timeout detection (lost entity alerts)
+
+---
+
+## Data Flow vs RF Flow — Two Distinct Editors
+
+SignalForge has **two separate flow graph systems**:
+
+### RF Flow Editor (`FlowEditor.tsx`)
+- **Purpose:** Signal processing pipelines (IQ → DSP → output)
+- **Nodes:** SDR sources, filters, demodulators, decoders, audio sinks
+- **Data type:** Float32Array (IQ samples, audio)
+- **25+ node types** in the palette
+
+### Data Flow Editor (`DataFlowEditor.tsx`)
+- **Purpose:** Event processing and automation pipelines
+- **Nodes:** Event sources (APRS packet, ADS-B update), transforms, filters, actions
+- **Data type:** Structured events (JSON)
+- **Bridge nodes** connect the two: e.g., "Decoder Output" node in RF Flow → "Event Source" in Data Flow
+
+### Bridge Nodes
+```
+RF Flow Graph                    Data Flow Graph
+┌──────────┐                    ┌──────────────┐
+│ APRS     │ ── bridge ──────→ │ APRS Event   │
+│ Decoder  │    (structured)    │ Source        │
+└──────────┘                    └──────┬───────┘
+                                       │
+                                ┌──────▼───────┐
+                                │ Geofence     │
+                                │ Check        │
+                                └──────┬───────┘
+                                       │
+                                ┌──────▼───────┐
+                                │ MQTT Publish │
+                                └──────────────┘
+```
+
+---
+
+## Live Feed Fallback Chain
+
+Each decoder follows a consistent fallback pattern:
+
+```
+Local Hardware (best)
+    │ unavailable?
+    ▼
+Public Feed (good)
+    │ unavailable?
+    ▼
+Demo Data (always works)
+```
+
+| Protocol | Local Hardware | Public Feed Fallback | Demo |
+|----------|---------------|---------------------|------|
+| **ADS-B** | dump1090 on port 30003 (RTL-SDR @ 1090MHz) | OpenSky Network REST API | Generated aircraft |
+| **APRS** | direwolf (RTL-SDR @ 144.8MHz) | APRS-IS TCP connection (live, 2000 station cap) | Generated stations |
+| **AIS** | rtl_ais (RTL-SDR @ 162MHz) | Finnish Digitraffic live API | Generated vessels |
+| **ACARS** | acarsdec subprocess | *(none yet)* | Generated messages |
+
+This means SignalForge shows **real data out of the box** — no hardware required.
+
+---
+
+## Decoder Status Table
+
+The server tracks decoder health and reports via WebSocket:
+
+| Decoder | Connection Method | Health Check | Auto-Reconnect |
+|---------|------------------|--------------|-----------------|
+| APRS | TCP to APRS-IS (rotate.aprs2.net:14580) | Heartbeat + station count | Yes, with backoff |
+| ADS-B | TCP to dump1090:30003 or OpenSky HTTP poll | Last message age | Yes |
+| AIS | HTTP poll to Digitraffic API | Response status + vessel count | Yes, with backoff |
+| Satellites | HTTP to CelesTrak | TLE age (refresh daily) | Yes |
+| WebSDR | HTTP proxy to KiwiSDR/WebSDR.org | Connection status | Yes |
+
+Status is exposed on the dashboard and via MCP tools.

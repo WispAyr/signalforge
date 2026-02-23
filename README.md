@@ -98,7 +98,12 @@ SignalForge is a **visual, node-based radio signal processing platform** that ru
 | Feature | Notes |
 |---------|-------|
 | Satellite tracking | CelesTrak TLE + SGP4 — real orbital positions |
-| ADS-B decoder | BaseStation protocol parser (needs dump1090 + RTL-SDR) |
+| APRS | **Live APRS-IS connection**, 2000 station cap, sortable/filterable table view |
+| ADS-B | **OpenSky Network live feed** (fallback from local dump1090) |
+| AIS | **Finnish Digitraffic live feed** (fallback from local decoder) |
+| Rules/Triggers engine | **Full implementation** — 18 conditions, 10 actions, SQLite persistence, event-driven |
+| Data Flow Editor | **Separate visual editor** for event processing pipelines (distinct from RF flow editor) |
+| Map | Cursor-anchored zoom (0.3–64×), live entity display |
 | RTL-TCP SDR bridge | Full protocol client, real IQ streaming |
 | SoapySDR client | SoapyRemote protocol, connects to real servers |
 | Rotator control | Hamlib rotctld TCP protocol |
@@ -106,31 +111,31 @@ SignalForge is a **visual, node-based radio signal processing platform** that ru
 | GPS/Location | gpsd client, browser geolocation, Nominatim geocoding |
 | SatNOGS API | Real API integration |
 | Browser DSP | FIR filters, FM/AM/SSB demod in JavaScript (Web Audio) |
-| Flow editor | Canvas-based node graph — drag, drop, wire, save, load |
+| RF Flow editor | Canvas-based node graph — drag, drop, wire, save, load |
 | Waterfall/Spectrum | Canvas rendering — works with real or demo data |
 | 3D Globe | Globe.gl + Three.js, interactive, real satellite positions |
+| WebSDR | KiwiSDR + WebSDR.org proxy — real radio signals |
+| DX Cluster | Real telnet-style feed integration |
 | UI/Navigation | Sidebar, command palette, themes, responsive |
 | MCP server | 41 tools via @modelcontextprotocol/sdk |
 | Signal database | 28+ built-in signals, searchable |
+| SQLite persistence | Logbook, recordings, settings, geofences, bookmarks |
 
-### 🟡 Demo Mode — Real code exists, needs hardware to light up
+### 🟡 Demo Mode — Real code exists, needs hardware to fully light up
 
 | Feature | What's needed |
 |---------|--------------|
-| ADS-B aircraft | Plug in RTL-SDR + run dump1090 |
-| AIS vessels | Need AIS decoder (rtl_ais) feeding data |
-| ACARS messages | Need acarsdec running |
-| APRS stations | Need direwolf or APRS-IS connection |
 | IQ streaming | Plug in RTL-SDR → rtl_tcp → real waterfall |
+| ACARS messages | Need acarsdec running |
 | Observation scheduler | Needs SDR + rotator connected |
 
 ### 🟠 Stub — Structure exists, core logic is simulated
 
-rtl_433 IoT, POCSAG/FLEX pager, sub-GHz/HackRF, SSTV, utility meters, WiFi/Bluetooth scanning, TSCM counter-surveillance, Meshtastic, VDL2, digital voice, DX cluster, Aaronia Spectran, number stations, audio streaming
+rtl_433 IoT, POCSAG/FLEX pager, sub-GHz/HackRF, SSTV, utility meters, WiFi/Bluetooth scanning, TSCM counter-surveillance, Meshtastic, VDL2, digital voice, Aaronia Spectran, number stations, audio streaming
 
 ### 🔴 Planned — UI/concept only
 
-WebGPU compute shaders (DSP runs in JS currently), AI signal narrator, community hub, training academy, AI signal classifier, multi-window, time machine, integration hub, equipment manager, geo-fencing, waterfall recording, external plugin loader, edge node package, logbook persistence
+WebGPU compute shaders (DSP runs in JS currently), AI signal narrator, community hub, training academy, AI signal classifier, multi-window, time machine, integration hub, equipment manager, cinematic mode, waterfall recording, external plugin loader, edge node package, offline/field mode
 
 📄 **Full details:** [docs/REALITY-CHECK.md](docs/REALITY-CHECK.md)
 
