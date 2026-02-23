@@ -1,0 +1,157 @@
+# ⚡ SignalForge
+
+**Universal Radio Platform** — Browser-based, GPU-accelerated, flow-based signal processing for every band, every mode, every protocol.
+
+<p align="center">
+  <img src="docs/assets/signalforge-banner.svg" alt="SignalForge" width="800"/>
+</p>
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19-61dafb?logo=react)](https://react.dev/)
+[![WebGPU](https://img.shields.io/badge/WebGPU-Accelerated-ff6600)](https://www.w3.org/TR/webgpu/)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
+---
+
+## What is SignalForge?
+
+SignalForge is a **visual, node-based radio signal processing platform** that runs in your browser. Think of it as a digital workbench where you wire together SDR sources, filters, demodulators, decoders, and displays — all rendered with GPU acceleration at 60fps+.
+
+### 🎯 Supported Domains
+
+| Domain | Capabilities |
+|--------|-------------|
+| 🛰️ **Satellites** | TLE tracking, pass prediction, Doppler correction, weather sat image decoding (NOAA, METEOR) |
+| 📻 **Amateur Radio** | HF/VHF/UHF, RAYNET emergency comms, repeater monitoring, APRS |
+| ✈️ **Aviation** | ADS-B aircraft tracking, ACARS message decoding |
+| 🚢 **Maritime** | AIS vessel tracking and identification |
+| 📡 **IoT** | LoRa/Meshtastic packet decoding |
+| ⚡ **Spectrum** | Wideband analysis, signal identification, waterfall display |
+| 🌦️ **Weather** | APT/LRPT satellite image decoding, NOAA/METEOR |
+
+### ✨ Key Features
+
+- **Visual Flow Editor** — Drag-and-drop node graph. Wire SDR sources → filters → demodulators → decoders → displays
+- **GPU Waterfall** — WebGPU compute shaders for 60fps+ spectrum/waterfall rendering
+- **Multi-SDR** — Connect multiple SDR devices simultaneously via WebUSB or WebSocket bridge
+- **Live Map** — Real-time satellite footprints, aircraft positions, vessel tracks on an interactive map
+- **Modular Decoders** — Each protocol is a flowgraph node: FM, AM, SSB, ADS-B, APRS, AIS, SSTV, LoRa...
+- **Dark Sci-Fi UI** — LCARS-meets-mission-control aesthetic. Cyan and amber on dark. Beautiful.
+- **TypeScript Throughout** — Frontend AND backend, unified stack
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    SignalForge Browser UI                     │
+│                                                               │
+│  ┌─────────┐  ┌──────────────┐  ┌─────────┐  ┌───────────┐ │
+│  │ Flow    │  │ GPU Waterfall │  │ Map     │  │ Decoder   │ │
+│  │ Editor  │  │ (WebGPU)     │  │ View    │  │ Panels    │ │
+│  └────┬────┘  └──────┬───────┘  └────┬────┘  └─────┬─────┘ │
+│       │              │               │              │        │
+│  ┌────┴──────────────┴───────────────┴──────────────┴────┐  │
+│  │              Flow Engine (Client-side DSP)             │  │
+│  │  SDR Source → Filter → Demod → Decoder → Display      │  │
+│  └────────────────────────┬──────────────────────────────┘  │
+│                           │ WebSocket / WebUSB               │
+└───────────────────────────┼──────────────────────────────────┘
+                            │
+┌───────────────────────────┼──────────────────────────────────┐
+│                    SignalForge Server                         │
+│                                                               │
+│  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌───────────┐ │
+│  │ SDR      │  │ Satellite │  │ IQ         │  │ Session   │ │
+│  │ Bridge   │  │ Tracker   │  │ Streaming  │  │ Manager   │ │
+│  └──────────┘  └──────────┘  └────────────┘  └───────────┘ │
+│       │                                                       │
+│  ┌────┴─────────────────────────────────────────────────┐    │
+│  │           Hardware Abstraction Layer                   │    │
+│  │   RTL-SDR │ Airspy │ HackRF │ USRP │ LimeSDR        │    │
+│  └──────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design.
+
+---
+
+## Quick Start
+
+```bash
+# Clone
+git clone https://github.com/WispAyr/signalforge.git
+cd signalforge
+
+# Install dependencies
+npm install
+
+# Start development (frontend + backend)
+npm run dev
+
+# Open browser
+open http://localhost:5180
+```
+
+### Requirements
+- Node.js 20+
+- Modern browser with WebGPU support (Chrome 113+, Edge 113+, Firefox Nightly)
+- SDR hardware (RTL-SDR, Airspy, HackRF, etc.) — optional, demo mode available
+
+---
+
+## Project Structure
+
+```
+signalforge/
+├── packages/
+│   ├── client/          # React + WebGPU frontend
+│   │   ├── src/
+│   │   │   ├── components/    # UI components
+│   │   │   ├── engine/        # Flow engine & node types
+│   │   │   ├── gpu/           # WebGPU shaders & renderers
+│   │   │   ├── nodes/         # Flowgraph node implementations
+│   │   │   └── views/         # Main application views
+│   │   └── index.html
+│   ├── server/          # Node.js backend
+│   │   └── src/
+│   │       ├── sdr/           # SDR hardware bridge
+│   │       ├── satellite/     # Orbital mechanics
+│   │       └── streaming/     # WebSocket IQ streaming
+│   └── shared/          # Shared TypeScript types
+│       └── src/
+│           ├── flow.ts        # Flow graph types
+│           ├── sdr.ts         # SDR types
+│           └── satellite.ts   # Satellite types
+├── docs/                # Documentation & assets
+├── package.json         # Monorepo root
+└── turbo.json          # Turborepo config
+```
+
+---
+
+## The Flow Editor
+
+The heart of SignalForge. Every radio operation is a visual pipeline:
+
+```
+┌──────────┐    ┌────────┐    ┌──────────┐    ┌─────────┐    ┌──────────┐
+│ RTL-SDR  ├───→│ Filter ├───→│ FM Demod ├───→│ Audio   ├───→│ Speaker  │
+│ Source   │    │ BPF    │    │          │    │ Resamp  │    │ Output   │
+└──────────┘    └────────┘    └──────────┘    └─────────┘    └──────────┘
+                                   │
+                              ┌────┴─────┐
+                              │ Waterfall│
+                              │ Display  │
+                              └──────────┘
+```
+
+Nodes snap together. Data flows left-to-right. Every parameter is tweakable in real-time.
+
+---
+
+## License
+
+MIT © [WispAyr](https://github.com/WispAyr)
