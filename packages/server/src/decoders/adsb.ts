@@ -136,12 +136,12 @@ export class ADSBDecoder extends EventEmitter {
     console.log('✈️  ADS-B: No dump1090 found, running demo mode');
 
     const demoAircraft = [
-      { icao: 'A0B1C2', callsign: 'BAW123', baseLat: 55.86, baseLon: -4.43, alt: 35000, speed: 450, heading: 135 },
-      { icao: 'D3E4F5', callsign: 'RYR456', baseLat: 55.50, baseLon: -4.60, alt: 28000, speed: 420, heading: 220 },
-      { icao: '400A1B', callsign: 'EZY789', baseLat: 55.30, baseLon: -4.20, alt: 38000, speed: 480, heading: 45 },
-      { icao: '3C6712', callsign: 'SHT101', baseLat: 55.70, baseLon: -5.00, alt: 15000, speed: 350, heading: 180 },
-      { icao: '780DEF', callsign: 'LOG202', baseLat: 55.95, baseLon: -4.80, alt: 6000, speed: 200, heading: 90 },
-      { icao: 'AB12CD', callsign: 'TOM303', baseLat: 55.20, baseLon: -3.80, alt: 32000, speed: 460, heading: 310 },
+      { icao: 'A0B1C2', callsign: 'BAW123', baseLat: 51.47, baseLon: -0.46, alt: 35000, speed: 450, heading: 135 },  // London Heathrow area
+      { icao: 'D3E4F5', callsign: 'RYR456', baseLat: 53.35, baseLon: -6.26, alt: 28000, speed: 420, heading: 220 }, // Dublin
+      { icao: '400A1B', callsign: 'EZY789', baseLat: 55.95, baseLon: -3.37, alt: 38000, speed: 480, heading: 45 },  // Edinburgh
+      { icao: '3C6712', callsign: 'SHT101', baseLat: 53.36, baseLon: -2.27, alt: 15000, speed: 350, heading: 180 }, // Manchester
+      { icao: '780DEF', callsign: 'LOG202', baseLat: 57.20, baseLon: -5.80, alt: 6000, speed: 200, heading: 90 },   // Highlands
+      { icao: 'AB12CD', callsign: 'TOM303', baseLat: 49.00, baseLon: -2.50, alt: 32000, speed: 460, heading: 310 }, // Channel Islands
     ];
 
     this.demoInterval = setInterval(() => {

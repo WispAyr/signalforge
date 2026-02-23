@@ -68,14 +68,14 @@ export class AISDecoder extends EventEmitter {
 
   private startDemoMode() {
     const demoVessels = [
-      { mmsi: '235099472', name: 'CALEDONIAN ISLES', type: 60, baseLat: 55.45, baseLon: -4.65, sog: 14, cog: 225, dest: 'BRODICK' },
-      { mmsi: '235006700', name: 'ISLE OF ARRAN', type: 60, baseLat: 55.58, baseLon: -5.05, sog: 12, cog: 180, dest: 'ARDROSSAN' },
-      { mmsi: '311045600', name: 'ATLANTIC STAR', type: 70, baseLat: 55.30, baseLon: -4.80, sog: 8, cog: 315, dest: 'TROON' },
-      { mmsi: '244670581', name: 'STENA SUPERFAST', type: 60, baseLat: 55.00, baseLon: -5.10, sog: 18, cog: 270, dest: 'BELFAST' },
-      { mmsi: '235082528', name: 'CLYDE FISHER', type: 30, baseLat: 55.52, baseLon: -4.90, sog: 5, cog: 90, dest: 'FISHING' },
-      { mmsi: '232003411', name: 'OCEAN SPIRIT', type: 37, baseLat: 55.48, baseLon: -4.55, sog: 6, cog: 45, dest: 'LARGS' },
-      { mmsi: '235501234', name: 'CLYDE PILOT', type: 50, baseLat: 55.42, baseLon: -4.72, sog: 10, cog: 160, dest: 'GREENOCK' },
-      { mmsi: '235090001', name: 'RNLI TROON', type: 51, baseLat: 55.54, baseLon: -4.68, sog: 22, cog: 200, dest: 'SAR OPS' },
+      { mmsi: '235099472', name: 'CALEDONIAN ISLES', type: 60, baseLat: 55.68, baseLon: -5.05, sog: 14, cog: 225, dest: 'BRODICK' },     // Firth of Clyde
+      { mmsi: '235006700', name: 'ISLE OF ARRAN', type: 60, baseLat: 55.75, baseLon: -5.15, sog: 12, cog: 180, dest: 'ARDROSSAN' },   // North Clyde
+      { mmsi: '311045600', name: 'ATLANTIC STAR', type: 70, baseLat: 54.60, baseLon: -5.90, sog: 8, cog: 315, dest: 'BELFAST' },      // Belfast Lough
+      { mmsi: '244670581', name: 'STENA SUPERFAST', type: 60, baseLat: 54.80, baseLon: -5.50, sog: 18, cog: 270, dest: 'BELFAST' },   // North Channel
+      { mmsi: '235082528', name: 'CLYDE FISHER', type: 30, baseLat: 56.00, baseLon: -5.50, sog: 5, cog: 90, dest: 'FISHING' },        // Oban area
+      { mmsi: '232003411', name: 'OCEAN SPIRIT', type: 37, baseLat: 55.95, baseLon: -4.77, sog: 6, cog: 45, dest: 'GREENOCK' },       // Upper Clyde
+      { mmsi: '235501234', name: 'CLYDE PILOT', type: 50, baseLat: 55.85, baseLon: -4.90, sog: 10, cog: 160, dest: 'GREENOCK' },      // Greenock
+      { mmsi: '235090001', name: 'RNLI TROON', type: 51, baseLat: 55.55, baseLon: -4.66, sog: 22, cog: 200, dest: 'SAR OPS' },        // Troon
     ];
 
     this.demoInterval = setInterval(() => {
