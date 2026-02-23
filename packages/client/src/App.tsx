@@ -190,7 +190,7 @@ export const App: React.FC = () => {
 
             {/* Main content area — offset by sidebar width */}
             <main
-              className={`flex-1 overflow-hidden relative transition-all duration-300 ${
+              className={`flex-1 h-full overflow-hidden relative flex flex-col transition-all duration-300 ${
                 sidebarExpanded ? 'ml-56' : 'ml-12'
               }`}
               role="main"
@@ -204,7 +204,7 @@ export const App: React.FC = () => {
 
               <ErrorBoundary>
                 <Suspense fallback={<ViewLoader />}>
-                  <div className="h-full animate-[fadeIn_200ms_ease-out]">
+                  <div className="flex-1 h-full min-h-0 animate-[fadeIn_200ms_ease-out]">
                     {renderView()}
                   </div>
                 </Suspense>
