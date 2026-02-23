@@ -1449,6 +1449,46 @@ app.post('/api/plugins/:id/disable', (req, res) => {
   res.json({ ok });
 });
 
+// Dynamic filesystem plugins from data/plugins/
+import { readdirSync, readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+const PLUGINS_DIR = join(process.cwd(), 'data', 'plugins');
+const fsPlugins = new Map<string, { manifest: any; enabled: boolean }>();
+function scanFilePlugins() {
+  if (!existsSync(PLUGINS_DIR)) return;
+  try {
+    for (const dir of readdirSync(PLUGINS_DIR, { withFileTypes: true })) {
+      if (!dir.isDirectory()) continue;
+      const manifestPath = join(PLUGINS_DIR, dir.name, 'manifest.json');
+      if (!existsSync(manifestPath)) continue;
+      try {
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+        manifest.id = manifest.id || dir.name;
+        manifest.dirName = dir.name;
+        fsPlugins.set(manifest.id, { manifest, enabled: true });
+      } catch {}
+    }
+  } catch {}
+}
+scanFilePlugins();
+app.get('/api/plugins/filesystem', (_req, res) => {
+  res.json(Array.from(fsPlugins.values()).map(p => ({ ...p.manifest, enabled: p.enabled })));
+});
+app.post('/api/plugins/filesystem/:id/enable', (req, res) => {
+  const p = fsPlugins.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Plugin not found' });
+  p.enabled = true;
+  res.json({ ok: true });
+});
+app.post('/api/plugins/filesystem/:id/disable', (req, res) => {
+  const p = fsPlugins.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Plugin not found' });
+  p.enabled = false;
+  res.json({ ok: true });
+});
+// Serve plugin JS files for client-side dynamic import
+app.use('/api/plugins/assets', express.static(PLUGINS_DIR));
+
 // ============================================================================
 // REST API — Edge Nodes
 // ============================================================================

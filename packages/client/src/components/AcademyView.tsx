@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Tutorial, QuizQuestion, AcademyProgress } from '@signalforge/shared';
+import { AcademyLessons } from './AcademyLessons';
 
 export const AcademyView: React.FC = () => {
   const [tutorials, setTutorials] = useState<Tutorial[]>([]);
@@ -7,7 +8,7 @@ export const AcademyView: React.FC = () => {
   const [progress, setProgress] = useState<AcademyProgress | null>(null);
   const [activeTutorial, setActiveTutorial] = useState<Tutorial | null>(null);
   const [activeStep, setActiveStep] = useState(0);
-  const [tab, setTab] = useState<'tutorials' | 'quiz' | 'playground'>('tutorials');
+  const [tab, setTab] = useState<'curriculum' | 'tutorials' | 'quiz' | 'playground'>('curriculum');
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number | null>>({});
   const [quizResults, setQuizResults] = useState<Record<string, { correct: boolean; explanation: string }>>({});
 
@@ -49,16 +50,18 @@ export const AcademyView: React.FC = () => {
         )}
         <div className="flex-1" />
         <div className="flex gap-1">
-          {(['tutorials', 'quiz', 'playground'] as const).map(t => (
+          {(['curriculum', 'tutorials', 'quiz', 'playground'] as const).map(t => (
             <button key={t} onClick={() => { setTab(t); setActiveTutorial(null); }}
               className={`px-3 py-1 rounded text-xs font-mono ${tab === t ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'text-gray-500 border border-forge-border'}`}>
-              {t === 'tutorials' ? '📖 Tutorials' : t === 'quiz' ? '❓ Quiz' : '🎮 Playground'}
+              {t === 'curriculum' ? '📚 Curriculum' : t === 'tutorials' ? '📖 Tutorials' : t === 'quiz' ? '❓ Quiz' : '🎮 Playground'}
             </button>
           ))}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
+        {tab === 'curriculum' && <AcademyLessons />}
+
         {tab === 'tutorials' && !activeTutorial && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {tutorials.map(tut => {

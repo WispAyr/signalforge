@@ -1,0 +1,9 @@
+{
+  "id": "noaa-apt-enhanced",
+  "name": "NOAA APT Enhanced Decoder",
+  "version": "2.0.0",
+  "description": "Enhanced NOAA APT weather satellite image decoder with colour palettes, histogram equalisation, and geographic overlay support.",
+  "author": "SignalForge",
+  "type": "decoder",
+  "entryPoint": "index.js"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "hello-world",
+  "name": "Hello World",
+  "version": "1.0.0",
+  "description": "Simplest possible SignalForge plugin — adds a Hello panel to demonstrate the plugin system.",
+  "author": "SignalForge",
+  "type": "view",
+  "entryPoint": "index.js"
+}
