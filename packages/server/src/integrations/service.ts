@@ -1,8 +1,10 @@
 import EventEmitter from 'events';
-import type { Integration, IntegrationType, IntegrationTestResult, IntegrationStatus, INTEGRATION_DEFINITIONS } from '@signalforge/shared';
+import { Socket } from 'net';
+import type { Integration, IntegrationType, IntegrationTestResult } from '@signalforge/shared';
 
 export class IntegrationHubService extends EventEmitter {
   private integrations: Map<IntegrationType, Integration> = new Map();
+  private connections: Map<IntegrationType, any> = new Map();
 
   constructor() {
     super();
@@ -20,6 +22,9 @@ export class IntegrationHubService extends EventEmitter {
       { id: 'flightaware', name: 'FlightAware', description: 'Feed ADS-B data', iconEmoji: '✈️' },
       { id: 'marinetraffic', name: 'MarineTraffic', description: 'Feed AIS data', iconEmoji: '🚢' },
       { id: 'aprsis', name: 'APRS-IS', description: 'APRS Internet System', iconEmoji: '📍' },
+      { id: 'mqtt' as IntegrationType, name: 'MQTT Broker', description: 'Connect to MQTT broker for data exchange', iconEmoji: '📡' },
+      { id: 'satnogs' as IntegrationType, name: 'SatNOGS', description: 'Satellite observation network', iconEmoji: '🛰️' },
+      { id: 'dump1090' as IntegrationType, name: 'dump1090', description: 'ADS-B decoder (Beast/SBS)', iconEmoji: '✈️' },
     ];
 
     for (const d of defs) {
@@ -46,22 +51,141 @@ export class IntegrationHubService extends EventEmitter {
     if (!integ) return { success: false, message: 'Integration not found', timestamp: Date.now() };
     if (!integ.enabled) return { success: false, message: 'Integration not configured', timestamp: Date.now() };
 
-    // Simulate test
     const start = Date.now();
-    await new Promise(r => setTimeout(r, 200 + Math.random() * 300));
-    const latency = Date.now() - start;
 
-    // Simulate success/failure
-    const success = Math.random() > 0.2;
-    if (success) {
-      integ.status = 'connected';
-      integ.lastConnected = Date.now();
-    } else {
+    try {
+      switch (id) {
+        case 'mqtt' as IntegrationType: {
+          return await this.testTcpConnection(
+            integ.config.broker || 'localhost',
+            parseInt(integ.config.port || '1883'),
+            'MQTT broker'
+          );
+        }
+
+        case 'dump1090' as IntegrationType: {
+          return await this.testTcpConnection(
+            integ.config.host || 'localhost',
+            parseInt(integ.config.port || '30003'),
+            'dump1090 SBS output'
+          );
+        }
+
+        case 'aprsis': {
+          return await this.testTcpConnection(
+            integ.config.server || 'rotate.aprs2.net',
+            parseInt(integ.config.port || '14580'),
+            'APRS-IS server'
+          );
+        }
+
+        case 'satnogs' as IntegrationType: {
+          const apiRes = await fetch('https://network.satnogs.org/api/observations/?format=json&limit=1', {
+            signal: AbortSignal.timeout(8000),
+            headers: { 'User-Agent': 'SignalForge/1.0' },
+          });
+          const latency = Date.now() - start;
+          if (apiRes.ok) {
+            integ.status = 'connected';
+            integ.lastConnected = Date.now();
+            return { success: true, message: `SatNOGS API reachable (${latency}ms)`, latencyMs: latency, timestamp: Date.now() };
+          }
+          integ.status = 'error';
+          return { success: false, message: `SatNOGS API returned ${apiRes.status}`, timestamp: Date.now() };
+        }
+
+        case 'telegram': {
+          const token = integ.config.botToken;
+          if (!token) return { success: false, message: 'Bot token not configured', timestamp: Date.now() };
+          const res = await fetch(`https://api.telegram.org/bot${token}/getMe`, { signal: AbortSignal.timeout(8000) });
+          const latency = Date.now() - start;
+          if (res.ok) {
+            const data = await res.json();
+            integ.status = 'connected';
+            integ.lastConnected = Date.now();
+            return { success: true, message: `Connected as @${data.result?.username} (${latency}ms)`, latencyMs: latency, timestamp: Date.now() };
+          }
+          integ.status = 'error';
+          return { success: false, message: 'Invalid bot token', timestamp: Date.now() };
+        }
+
+        case 'discord': {
+          const webhookUrl = integ.config.webhookUrl;
+          if (!webhookUrl) return { success: false, message: 'Webhook URL not configured', timestamp: Date.now() };
+          // Just check the webhook is valid (GET returns webhook info)
+          const res = await fetch(webhookUrl, { signal: AbortSignal.timeout(8000) });
+          const latency = Date.now() - start;
+          if (res.ok) {
+            integ.status = 'connected';
+            integ.lastConnected = Date.now();
+            return { success: true, message: `Discord webhook valid (${latency}ms)`, latencyMs: latency, timestamp: Date.now() };
+          }
+          integ.status = 'error';
+          return { success: false, message: 'Invalid webhook URL', timestamp: Date.now() };
+        }
+
+        case 'grafana': {
+          const url = integ.config.url || 'http://localhost:3000';
+          const res = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(5000) });
+          const latency = Date.now() - start;
+          if (res.ok) {
+            integ.status = 'connected';
+            integ.lastConnected = Date.now();
+            return { success: true, message: `Grafana reachable (${latency}ms)`, latencyMs: latency, timestamp: Date.now() };
+          }
+          integ.status = 'error';
+          return { success: false, message: `Grafana returned ${res.status}`, timestamp: Date.now() };
+        }
+
+        default: {
+          // Simulate for integrations without real test logic
+          await new Promise(r => setTimeout(r, 200 + Math.random() * 300));
+          const latency = Date.now() - start;
+          const success = Math.random() > 0.2;
+          if (success) {
+            integ.status = 'connected';
+            integ.lastConnected = Date.now();
+          } else {
+            integ.status = 'error';
+            integ.lastError = 'Connection timed out';
+          }
+          return { success, message: success ? `Connected (${latency}ms)` : 'Connection timed out', latencyMs: latency, timestamp: Date.now() };
+        }
+      }
+    } catch (err: any) {
       integ.status = 'error';
-      integ.lastError = 'Connection timed out';
+      integ.lastError = err.message;
+      return { success: false, message: err.message || 'Connection failed', timestamp: Date.now() };
     }
+  }
 
-    return { success, message: success ? `Connected successfully (${latency}ms)` : 'Connection timed out — check configuration', latencyMs: latency, timestamp: Date.now() };
+  private testTcpConnection(host: string, port: number, label: string): Promise<IntegrationTestResult> {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const socket = new Socket();
+      const timeout = setTimeout(() => {
+        socket.destroy();
+        resolve({ success: false, message: `${label} at ${host}:${port} — connection timed out`, timestamp: Date.now() });
+      }, 5000);
+
+      socket.on('connect', () => {
+        const latency = Date.now() - start;
+        clearTimeout(timeout);
+        socket.destroy();
+        // Update integration status
+        const integ = [...this.integrations.values()].find(i => i.config.host === host || i.config.broker === host || i.config.server === host);
+        if (integ) { integ.status = 'connected'; integ.lastConnected = Date.now(); }
+        resolve({ success: true, message: `${label} at ${host}:${port} reachable (${latency}ms)`, latencyMs: latency, timestamp: Date.now() });
+      });
+
+      socket.on('error', (err) => {
+        clearTimeout(timeout);
+        socket.destroy();
+        resolve({ success: false, message: `${label} at ${host}:${port} — ${err.message}`, timestamp: Date.now() });
+      });
+
+      socket.connect(port, host);
+    });
   }
 
   enable(id: IntegrationType): boolean {
@@ -69,7 +193,8 @@ export class IntegrationHubService extends EventEmitter {
     if (!integ) return false;
     integ.enabled = true;
     integ.status = 'connecting';
-    setTimeout(() => { integ.status = 'connected'; integ.lastConnected = Date.now(); }, 1000);
+    // Auto-test on enable
+    this.test(id).catch(() => {});
     return true;
   }
 
@@ -78,10 +203,14 @@ export class IntegrationHubService extends EventEmitter {
     if (!integ) return false;
     integ.enabled = false;
     integ.status = 'disconnected';
+    // Clean up any connections
+    const conn = this.connections.get(id);
+    if (conn?.destroy) conn.destroy();
+    if (conn?.close) conn.close();
+    this.connections.delete(id);
     return true;
   }
 
-  // Prometheus metrics endpoint content
   getPrometheusMetrics(): string {
     return [
       '# HELP signalforge_signals_total Total signals received',
@@ -90,15 +219,9 @@ export class IntegrationHubService extends EventEmitter {
       '# HELP signalforge_active_decoders Number of active decoders',
       '# TYPE signalforge_active_decoders gauge',
       'signalforge_active_decoders 0',
-      '# HELP signalforge_edge_nodes_connected Connected edge nodes',
-      '# TYPE signalforge_edge_nodes_connected gauge',
-      'signalforge_edge_nodes_connected 0',
-      '# HELP signalforge_cpu_dsp_ms DSP processing time in milliseconds',
-      '# TYPE signalforge_cpu_dsp_ms histogram',
-      'signalforge_cpu_dsp_ms_bucket{le="1"} 0',
-      'signalforge_cpu_dsp_ms_bucket{le="5"} 0',
-      'signalforge_cpu_dsp_ms_bucket{le="10"} 0',
-      'signalforge_cpu_dsp_ms_bucket{le="+Inf"} 0',
+      '# HELP signalforge_integrations_connected Connected integrations',
+      '# TYPE signalforge_integrations_connected gauge',
+      `signalforge_integrations_connected ${[...this.integrations.values()].filter(i => i.status === 'connected').length}`,
     ].join('\n');
   }
 }

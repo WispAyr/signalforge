@@ -51,6 +51,7 @@ import { VDL2Service } from './vdl2/service.js';
 import { NarratorService } from './narrator/service.js';
 import { CommunityService } from './community/service.js';
 import { AcademyService } from './academy/service.js';
+import { getModules, getLessons, getLesson, getLessonsByModule } from './academy/content.js';
 import { HistoryService } from './history/service.js';
 import { IntegrationHubService } from './integrations/service.js';
 import { EquipmentService } from './equipment/service.js';
@@ -2176,6 +2177,33 @@ app.post('/api/community/flowgraphs/:id/rate', (req, res) => res.json({ ok: comm
 app.post('/api/community/flowgraphs/:id/comment', (req, res) => res.json(communityService.commentOnFlowgraph(req.params.id, req.body.author, req.body.text)));
 app.get('/api/community/plugins', (req, res) => res.json(communityService.getPlugins(req.query.category as any)));
 
+// Community Hub — shared bookmarks, feed, signal reports
+const communityBookmarks: any[] = [];
+const communityReports: any[] = [];
+const communityFeed: any[] = [];
+function addFeedItem(type: string, data: any) {
+  communityFeed.unshift({ id: `feed-${Date.now()}`, type, data, timestamp: Date.now() });
+  if (communityFeed.length > 200) communityFeed.length = 200;
+}
+app.get('/api/community/bookmarks', (_req, res) => res.json(communityBookmarks));
+app.post('/api/community/bookmarks', (req, res) => {
+  const bm = { id: `bm-${Date.now()}`, ...req.body, sharedAt: Date.now() };
+  communityBookmarks.unshift(bm);
+  addFeedItem('bookmark', { nickname: req.body.nickname || 'Anonymous', frequency: req.body.frequency, label: req.body.label });
+  res.json(bm);
+});
+app.get('/api/community/feed', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 50;
+  res.json(communityFeed.slice(0, limit));
+});
+app.post('/api/community/reports', (req, res) => {
+  const report = { id: `rpt-${Date.now()}`, ...req.body, timestamp: Date.now() };
+  communityReports.unshift(report);
+  addFeedItem('signal_report', { nickname: req.body.nickname || 'Anonymous', signal: req.body.signal, frequency: req.body.frequency, location: req.body.location });
+  res.json(report);
+});
+app.get('/api/community/reports', (_req, res) => res.json(communityReports));
+
 // ============================================================================
 // REST API — Phase 8: Academy / Training
 // ============================================================================
@@ -2188,6 +2216,22 @@ app.get('/api/academy/quiz', (req, res) => res.json(academyService.getQuizQuesti
 app.post('/api/academy/quiz/answer', (req, res) => res.json(academyService.submitQuizAnswer(req.body.questionId, req.body.answerIndex)));
 app.post('/api/academy/tutorials/:id/complete', (req, res) => { academyService.completeTutorial(req.params.id); res.json({ ok: true }); });
 app.get('/api/academy/progress', (_req, res) => res.json(academyService.getProgress()));
+
+// Module-based lesson content (new curriculum)
+app.get('/api/academy/modules', (_req, res) => res.json(getModules()));
+app.get('/api/academy/modules/:moduleId/lessons', (req, res) => res.json(getLessonsByModule(parseInt(req.params.moduleId))));
+app.get('/api/academy/lessons', (_req, res) => res.json(getLessons()));
+app.get('/api/academy/lessons/:id', (req, res) => {
+  const lesson = getLesson(req.params.id);
+  lesson ? res.json(lesson) : res.status(404).json({ error: 'Lesson not found' });
+});
+const lessonProgress = new Map<string, Set<string>>(); // sessionId -> completed lesson IDs
+app.post('/api/academy/progress', (req, res) => {
+  const { sessionId = 'default', lessonId, completed } = req.body;
+  if (!lessonProgress.has(sessionId)) lessonProgress.set(sessionId, new Set());
+  if (completed) lessonProgress.get(sessionId)!.add(lessonId);
+  res.json({ ok: true, completed: Array.from(lessonProgress.get(sessionId)!) });
+});
 
 // ============================================================================
 // REST API — Phase 8: Signal History / Time Machine
@@ -2226,6 +2270,11 @@ app.delete('/api/equipment/mine/:id', (req, res) => res.json({ ok: equipmentServ
 app.get('/api/equipment/compatibility', (_req, res) => res.json(equipmentService.getCompatibility()));
 app.get('/api/equipment/compatible/:decoder', (req, res) => res.json(equipmentService.getCompatibleHardware(req.params.decoder)));
 app.post('/api/equipment/shopping-list', (req, res) => res.json(equipmentService.getShoppingList(req.body.capabilities || [])));
+app.get('/api/equipment/scan', (_req, res) => res.json(equipmentService.scan()));
+app.get('/api/equipment/status', (_req, res) => {
+  const scan = equipmentService.getLastScan() || equipmentService.scan();
+  res.json({ detected: scan.hardware, services: scan.services, registered: equipmentService.getUserEquipment(), timestamp: scan.timestamp });
+});
 
 // ============================================================================
 // REST API — Aaronia Spectran V6

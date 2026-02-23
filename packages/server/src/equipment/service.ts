@@ -1,10 +1,53 @@
 import EventEmitter from 'events';
+import { execSync } from 'child_process';
+import { platform } from 'os';
 import type { SDRHardware, UserEquipment, CompatibilityEntry, ShoppingListItem, SDRHardwareType } from '@signalforge/shared';
 import { SDR_DATABASE } from '@signalforge/shared';
+
+// Known SDR USB VID:PID mappings
+const SDR_USB_IDS: Record<string, { vid: string; pid: string; type: SDRHardwareType; name: string }[]> = {
+  rtlsdr: [
+    { vid: '0bda', pid: '2838', type: 'rtlsdr', name: 'RTL-SDR (RTL2838)' },
+    { vid: '0bda', pid: '2832', type: 'rtlsdr', name: 'RTL-SDR (RTL2832)' },
+  ],
+  airspy: [
+    { vid: '1d50', pid: '60a1', type: 'airspy' as SDRHardwareType, name: 'Airspy' },
+  ],
+  hackrf: [
+    { vid: '1d50', pid: '6089', type: 'hackrf', name: 'HackRF One' },
+  ],
+  limesdr: [
+    { vid: '0403', pid: '601f', type: 'limesdr' as SDRHardwareType, name: 'LimeSDR' },
+  ],
+};
+
+const ALL_USB_IDS = Object.values(SDR_USB_IDS).flat();
+
+export interface DetectedDevice {
+  type: SDRHardwareType;
+  name: string;
+  vid: string;
+  pid: string;
+  detected: true;
+  usbPath?: string;
+}
+
+export interface RunningService {
+  name: string;
+  pid: number;
+  running: true;
+}
+
+export interface ScanResult {
+  hardware: DetectedDevice[];
+  services: RunningService[];
+  timestamp: number;
+}
 
 export class EquipmentService extends EventEmitter {
   private userEquipment: UserEquipment[] = [];
   private compatibility: CompatibilityEntry[] = [];
+  private lastScan: ScanResult | null = null;
 
   constructor() {
     super();
@@ -24,6 +67,93 @@ export class EquipmentService extends EventEmitter {
       { decoder: 'wifi', hardware: ['hackrf', 'usrp'], minBandwidthHz: 20000000, notes: 'Requires wide bandwidth at 2.4/5 GHz' },
       { decoder: 'rtl433', hardware: ['rtlsdr', 'hackrf', 'airspy', 'sdrplay'], minBandwidthHz: 250000 },
     ];
+  }
+
+  /**
+   * Scan for connected USB SDR devices
+   */
+  scanHardware(): DetectedDevice[] {
+    const detected: DetectedDevice[] = [];
+    const os = platform();
+
+    try {
+      if (os === 'darwin') {
+        // macOS: use system_profiler
+        const output = execSync('system_profiler SPUSBDataType 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
+        for (const entry of ALL_USB_IDS) {
+          // system_profiler shows Vendor ID and Product ID in hex with 0x prefix
+          const vidPattern = `0x${entry.vid}`;
+          const pidPattern = `0x${entry.pid}`;
+          if (output.toLowerCase().includes(vidPattern) && output.toLowerCase().includes(pidPattern)) {
+            detected.push({ type: entry.type, name: entry.name, vid: entry.vid, pid: entry.pid, detected: true });
+          }
+        }
+      } else if (os === 'linux') {
+        // Linux: use lsusb
+        let output = '';
+        try {
+          output = execSync('lsusb 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
+        } catch {
+          // Try reading /sys/bus/usb/devices
+          try {
+            const devs = execSync('cat /sys/bus/usb/devices/*/idVendor /sys/bus/usb/devices/*/idProduct 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
+            output = devs;
+          } catch {}
+        }
+        for (const entry of ALL_USB_IDS) {
+          const pattern = `${entry.vid}:${entry.pid}`;
+          if (output.toLowerCase().includes(pattern) || (output.includes(entry.vid) && output.includes(entry.pid))) {
+            detected.push({ type: entry.type, name: entry.name, vid: entry.vid, pid: entry.pid, detected: true });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('USB scan error:', err);
+    }
+
+    return detected;
+  }
+
+  /**
+   * Check for running SDR-related services/processes
+   */
+  scanServices(): RunningService[] {
+    const services: RunningService[] = [];
+    const processNames = ['rtl_tcp', 'SoapySDRServer', 'dump1090', 'dump1090-mutability', 'dump1090-fa', 'rtl_433', 'direwolf', 'rtl_ais'];
+
+    try {
+      for (const name of processNames) {
+        try {
+          const output = execSync(`pgrep -x "${name}" 2>/dev/null || pgrep -f "${name}" 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
+          const pids = output.trim().split('\n').filter(Boolean);
+          if (pids.length > 0) {
+            services.push({ name, pid: parseInt(pids[0], 10), running: true });
+          }
+        } catch {
+          // Process not found — normal
+        }
+      }
+    } catch {}
+
+    return services;
+  }
+
+  /**
+   * Full scan: hardware + services
+   */
+  scan(): ScanResult {
+    const result: ScanResult = {
+      hardware: this.scanHardware(),
+      services: this.scanServices(),
+      timestamp: Date.now(),
+    };
+    this.lastScan = result;
+    this.emit('scan', result);
+    return result;
+  }
+
+  getLastScan(): ScanResult | null {
+    return this.lastScan;
   }
 
   getHardwareDatabase(): SDRHardware[] { return SDR_DATABASE; }
@@ -62,7 +192,6 @@ export class EquipmentService extends EventEmitter {
       if (!compat) continue;
       const hasCompatible = compat.hardware.some(h => owned.has(h));
       if (!hasCompatible) {
-        // Recommend cheapest compatible hardware
         const options = SDR_DATABASE.filter(h => compat.hardware.includes(h.id)).sort((a, b) => parseInt(a.price.replace(/[^0-9]/g, '')) - parseInt(b.price.replace(/[^0-9]/g, '')));
         if (options.length) {
           const existing = needed.find(n => n.hardware.id === options[0].id);
