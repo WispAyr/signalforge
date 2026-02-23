@@ -11,12 +11,20 @@ import { SignalGuide } from './components/SignalGuide';
 import { SDRPanel } from './components/SDRPanel';
 import { SpectrumAnalyzer } from './components/SpectrumAnalyzer';
 import { ObservationScheduler } from './components/ObservationScheduler';
+import { ChatPanel } from './components/ChatPanel';
+import { PluginsPage } from './components/PluginsPage';
+import { EdgeNodesPage } from './components/EdgeNodesPage';
+import { FrequencyScanner } from './components/FrequencyScanner';
+import { TimelineView } from './components/TimelineView';
+import { TelemetryDashboard } from './components/TelemetryDashboard';
+import { ThemeProvider } from './components/ThemeProvider';
 
-export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'sdr' | 'analyzer' | 'scheduler' | 'signals' | 'settings';
+export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'sdr' | 'analyzer' | 'scheduler' | 'signals' | 'settings' | 'scanner' | 'timeline' | 'telemetry' | 'plugins' | 'edge';
 
 export const App: React.FC = () => {
   const [activeView, setActiveView] = useState<View>('dashboard');
   const [transitioning, setTransitioning] = useState(false);
+  const [showChat, setShowChat] = useState(false);
 
   const changeView = useCallback((view: View) => {
     if (view === activeView) return;
@@ -31,6 +39,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (e.ctrlKey || e.metaKey) return;
       switch (e.key) {
         case '1': changeView('dashboard'); break;
         case '2': changeView('flow'); break;
@@ -41,6 +50,7 @@ export const App: React.FC = () => {
         case '7': changeView('scheduler'); break;
         case '8': changeView('signals'); break;
         case '9': changeView('settings'); break;
+        case 'c': if (e.altKey) setShowChat(prev => !prev); break;
       }
     };
     window.addEventListener('keydown', handler);
@@ -48,26 +58,40 @@ export const App: React.FC = () => {
   }, [changeView]);
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-forge-bg grid-overlay overflow-hidden">
-      <Header activeView={activeView} onViewChange={changeView} />
+    <ThemeProvider>
+      <div className="h-screen w-screen flex flex-col bg-forge-bg grid-overlay overflow-hidden">
+        <Header activeView={activeView} onViewChange={changeView} onToggleChat={() => setShowChat(prev => !prev)} showChat={showChat} />
 
-      <div className="flex-1 flex overflow-hidden">
-        {(activeView === 'flow') && <Sidebar />}
+        <div className="flex-1 flex overflow-hidden">
+          {(activeView === 'flow') && <Sidebar />}
 
-        <main className={`flex-1 overflow-hidden relative transition-opacity duration-150 ${transitioning ? 'opacity-0' : 'opacity-100'}`}>
-          {activeView === 'dashboard' && <Dashboard onNavigate={changeView} />}
-          {activeView === 'flow' && <FlowEditor />}
-          {activeView === 'waterfall' && <WaterfallView />}
-          {activeView === 'map' && <MapView />}
-          {activeView === 'sdr' && <SDRPanel />}
-          {activeView === 'analyzer' && <SpectrumAnalyzer />}
-          {activeView === 'scheduler' && <ObservationScheduler />}
-          {activeView === 'signals' && <SignalGuide />}
-          {activeView === 'settings' && <SettingsPage />}
-        </main>
+          <main className={`flex-1 overflow-hidden relative transition-opacity duration-150 ${transitioning ? 'opacity-0' : 'opacity-100'}`}>
+            {activeView === 'dashboard' && <Dashboard onNavigate={changeView} />}
+            {activeView === 'flow' && <FlowEditor />}
+            {activeView === 'waterfall' && <WaterfallView />}
+            {activeView === 'map' && <MapView />}
+            {activeView === 'sdr' && <SDRPanel />}
+            {activeView === 'analyzer' && <SpectrumAnalyzer />}
+            {activeView === 'scheduler' && <ObservationScheduler />}
+            {activeView === 'signals' && <SignalGuide />}
+            {activeView === 'scanner' && <FrequencyScanner />}
+            {activeView === 'timeline' && <TimelineView />}
+            {activeView === 'telemetry' && <TelemetryDashboard />}
+            {activeView === 'plugins' && <PluginsPage />}
+            {activeView === 'edge' && <EdgeNodesPage />}
+            {activeView === 'settings' && <SettingsPage />}
+          </main>
+
+          {/* Chat panel (floating) */}
+          {showChat && (
+            <div className="w-80 border-l border-forge-border bg-forge-surface">
+              <ChatPanel onClose={() => setShowChat(false)} />
+            </div>
+          )}
+        </div>
+
+        <StatusBar />
       </div>
-
-      <StatusBar />
-    </div>
+    </ThemeProvider>
   );
 };

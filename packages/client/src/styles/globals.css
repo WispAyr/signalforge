@@ -63,3 +63,89 @@
   background: rgba(18, 18, 26, 0.8);
   backdrop-filter: blur(10px);
 }
+
+/* ============================================================================
+   THEME: LCARS (Star Trek)
+   ============================================================================ */
+.theme-lcars {
+  font-family: 'Antonio', 'Helvetica Neue', sans-serif !important;
+}
+.theme-lcars .panel-border {
+  border: 2px solid #FF9900;
+  border-radius: 24px 8px 24px 8px;
+  background: rgba(17, 17, 17, 0.95);
+}
+.theme-lcars .glow-cyan {
+  box-shadow: 0 0 10px rgba(255, 153, 0, 0.3), inset 0 0 10px rgba(255, 153, 0, 0.1);
+}
+.theme-lcars .grid-overlay {
+  background-image:
+    linear-gradient(rgba(255, 153, 0, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 153, 0, 0.02) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.theme-lcars header {
+  border-bottom: 3px solid #FF9900;
+  background: #000000 !important;
+}
+.theme-lcars nav button {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-family: 'Antonio', sans-serif;
+}
+/* LCARS characteristic rounded end-caps */
+.theme-lcars .lcars-bracket-left {
+  border-left: 4px solid #FF9900;
+  border-top: 4px solid #FF9900;
+  border-top-left-radius: 24px;
+  padding-left: 12px;
+  padding-top: 8px;
+}
+.theme-lcars .lcars-bracket-right {
+  border-right: 4px solid #CC99CC;
+  border-bottom: 4px solid #CC99CC;
+  border-bottom-right-radius: 24px;
+  padding-right: 12px;
+  padding-bottom: 8px;
+}
+/* LCARS color bars */
+.theme-lcars .lcars-bar {
+  height: 8px;
+  border-radius: 4px;
+}
+.theme-lcars .lcars-bar-orange { background: #FF9900; }
+.theme-lcars .lcars-bar-lavender { background: #CC99CC; }
+.theme-lcars .lcars-bar-blue { background: #9999FF; }
+.theme-lcars .lcars-bar-tan { background: #FFAA90; }
+
+/* ============================================================================
+   THEME: Light Mode
+   ============================================================================ */
+.theme-light {
+  color-scheme: light;
+}
+.theme-light .panel-border {
+  border: 1px solid #d0d5dd;
+  background: rgba(255, 255, 255, 0.9);
+}
+.theme-light .grid-overlay {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
+}
+.theme-light .glow-cyan {
+  box-shadow: 0 0 5px rgba(26, 115, 232, 0.2);
+}
+
+/* ============================================================================
+   THEME: Tactical (Green/Amber)
+   ============================================================================ */
+body[style*="background-color: rgb(10, 15, 10)"] .glow-cyan {
+  box-shadow: 0 0 10px rgba(51, 255, 51, 0.3), inset 0 0 10px rgba(51, 255, 51, 0.1);
+}
+body[style*="background-color: rgb(10, 15, 10)"] .grid-overlay {
+  background-image:
+    linear-gradient(rgba(51, 255, 51, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(51, 255, 51, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}

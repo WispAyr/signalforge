@@ -7,6 +7,8 @@ import type { Notification } from '@signalforge/shared';
 interface HeaderProps {
   activeView: View;
   onViewChange: (view: View) => void;
+  onToggleChat?: () => void;
+  showChat?: boolean;
 }
 
 const views: { id: View; label: string; icon: string; key: string }[] = [
@@ -16,12 +18,17 @@ const views: { id: View; label: string; icon: string; key: string }[] = [
   { id: 'map', label: 'MAP', icon: '◎', key: '4' },
   { id: 'sdr', label: 'SDR', icon: '📡', key: '5' },
   { id: 'analyzer', label: 'ANALYZER', icon: '📊', key: '6' },
+  { id: 'scanner', label: 'SCAN', icon: '📻', key: '' },
   { id: 'scheduler', label: 'SCHED', icon: '📅', key: '7' },
-  { id: 'signals', label: 'SIGNALS', icon: '📻', key: '8' },
+  { id: 'signals', label: 'SIGNALS', icon: '🔍', key: '8' },
+  { id: 'timeline', label: 'TIME', icon: '📜', key: '' },
+  { id: 'telemetry', label: 'TLM', icon: '🛰️', key: '' },
+  { id: 'edge', label: 'EDGE', icon: '🖥️', key: '' },
+  { id: 'plugins', label: 'PLG', icon: '🔌', key: '' },
   { id: 'settings', label: '⚙', icon: '⚙', key: '9' },
 ];
 
-export const Header: React.FC<HeaderProps> = ({ activeView, onViewChange }) => {
+export const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onToggleChat, showChat }) => {
   const { observer, fetchSettings, loaded } = useLocationStore();
   const [showLocation, setShowLocation] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -112,6 +119,14 @@ export const Header: React.FC<HeaderProps> = ({ activeView, onViewChange }) => {
               <span className="w-2 h-2 rounded-full bg-forge-red" />
               REC
             </span>
+          )}
+
+          {/* Chat toggle */}
+          {onToggleChat && (
+            <button onClick={onToggleChat}
+              className={`px-2 py-1 rounded text-xs font-mono transition-colors ${showChat ? 'text-forge-cyan bg-forge-cyan/10' : 'text-forge-text-dim hover:text-forge-text hover:bg-forge-panel/50'}`}>
+              💬
+            </button>
           )}
 
           {/* Notifications */}

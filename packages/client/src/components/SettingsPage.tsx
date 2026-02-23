@@ -10,10 +10,47 @@ const SOURCES: { id: LocationSource; label: string; icon: string; desc: string }
   { id: 'auto', label: 'Auto', icon: '🔄', desc: 'Best available with fallback' },
 ];
 
-const THEMES = [
-  { id: 'dark', name: 'Dark Forge', desc: 'Default dark sci-fi theme' },
-  { id: 'midnight', name: 'Midnight', desc: 'Ultra-dark OLED-friendly' },
-];
+import { useTheme } from './ThemeProvider';
+import { THEMES as THEME_DEFS } from '@signalforge/shared';
+
+const ThemeSelector: React.FC = () => {
+  const { themeId, setTheme, customAccent, setCustomAccent } = useTheme();
+  const themes = Object.values(THEME_DEFS);
+  return (
+    <div className="panel-border rounded-lg p-5">
+      <h3 className="text-xs font-mono tracking-wider text-forge-cyan mb-3">🎨 THEME</h3>
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        {themes.map(t => (
+          <button key={t.id} onClick={() => setTheme(t.id)}
+            className={`p-4 rounded-lg border text-left transition-colors ${themeId === t.id ? 'border-current bg-current/10' : 'border-forge-border hover:border-forge-text-dim'}`}
+            style={{ borderColor: themeId === t.id ? t.colors.primary : undefined }}>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="flex gap-1">
+                {[t.colors.primary, t.colors.secondary, t.colors.accent, t.colors.success].map((c, i) => (
+                  <div key={i} className="w-3 h-3 rounded-sm" style={{ backgroundColor: c }} />
+                ))}
+              </div>
+            </div>
+            <div className="text-sm font-mono" style={{ color: themeId === t.id ? t.colors.primary : undefined }}>{t.name}</div>
+            <div className="text-[10px] font-mono text-forge-text-dim mt-0.5">{t.description}</div>
+          </button>
+        ))}
+      </div>
+      <div>
+        <label className="text-[10px] font-mono text-forge-text-dim">Custom Accent Colour</label>
+        <div className="flex items-center gap-2 mt-1">
+          <input type="color" value={customAccent || THEME_DEFS[themeId]?.colors.primary || '#00e5ff'}
+            onChange={e => setCustomAccent(e.target.value)}
+            className="w-8 h-8 rounded border border-forge-border bg-forge-bg cursor-pointer" />
+          <span className="text-xs font-mono text-forge-text-dim">{customAccent || 'Default'}</span>
+          {customAccent && (
+            <button onClick={() => setCustomAccent('')} className="text-[10px] font-mono text-forge-red hover:underline">Reset</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const SettingsPage: React.FC = () => {
   const { observer, settings, loaded, fetchSettings, setManualLocation, setSource, updateSettings, useBrowserGPS } = useLocationStore();
@@ -295,18 +332,7 @@ export const SettingsPage: React.FC = () => {
         {/* ── Display Section ──────────────────────────────────────── */}
         {activeSection === 'display' && (
           <div className="space-y-4">
-            <div className="panel-border rounded-lg p-5">
-              <h3 className="text-xs font-mono tracking-wider text-forge-cyan mb-3">🎨 THEME</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {THEMES.map(t => (
-                  <button key={t.id}
-                    className="p-4 rounded-lg border border-forge-cyan/30 bg-forge-cyan/5 text-left">
-                    <div className="text-sm font-mono text-forge-cyan">{t.name}</div>
-                    <div className="text-[10px] font-mono text-forge-text-dim mt-1">{t.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <ThemeSelector />
 
             <div className="panel-border rounded-lg p-5">
               <h3 className="text-xs font-mono tracking-wider text-forge-cyan mb-3">📐 UNITS</h3>

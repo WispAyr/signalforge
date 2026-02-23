@@ -17,6 +17,13 @@ import { AISDecoder } from './decoders/ais.js';
 import { APRSDecoder } from './decoders/aprs.js';
 import { LocationService } from './location/service.js';
 import { SignalDatabaseService } from './signals/database.js';
+import { SessionManager } from './multiuser/sessions.js';
+import { PluginLoader } from './plugins/loader.js';
+import { EdgeNodeManager } from './edge/manager.js';
+import { FrequencyScanner } from './scanner/service.js';
+import { SignalClassifier } from './classifier/service.js';
+import { TimelineService } from './timeline/service.js';
+import { TelemetryService } from './telemetry/service.js';
 import type { DashboardStats, ActivityFeedItem } from '@signalforge/shared';
 
 const PORT = parseInt(process.env.PORT || '3401');
@@ -47,8 +54,73 @@ const rtlTcpConnections = new Map<string, RtlTcpClient>();
 const soapyConnections = new Map<string, SoapyClient>();
 let rotatorClient: RotatorClient | null = null;
 
+const sessionManager = new SessionManager();
+const pluginLoader = new PluginLoader();
+const edgeNodeManager = new EdgeNodeManager();
+const frequencyScanner = new FrequencyScanner();
+const signalClassifier = new SignalClassifier();
+const timelineService = new TimelineService();
+const telemetryService = new TelemetryService();
+
 const locationService = new LocationService();
 locationService.start();
+
+// Start demo telemetry
+telemetryService.startDemoTelemetry();
+
+// Session cleanup interval
+setInterval(() => sessionManager.cleanup(), 60000);
+// Edge node health check
+setInterval(() => edgeNodeManager.checkHealth(), 15000);
+
+// Wire up events to timeline
+sessionManager.on('chat', (msg) => {
+  broadcast({ type: 'chat_message', message: msg });
+});
+sessionManager.on('observation', (obs) => {
+  broadcast({ type: 'shared_observation', observation: obs });
+  timelineService.addEvent({ type: 'observation', title: `${obs.nickname}: ${obs.description}`, description: `${(obs.frequency / 1e6).toFixed(3)} MHz ${obs.mode}`, timestamp: Date.now(), frequency: obs.frequency, icon: '📡', color: obs.color, userId: obs.userId, nickname: obs.nickname });
+});
+sessionManager.on('user_joined', (user) => {
+  broadcast({ type: 'users_update', users: sessionManager.getOnlineUsers() });
+  timelineService.addEvent({ type: 'system', title: `${user.nickname} joined`, description: 'New operator connected', timestamp: Date.now(), icon: '👤', color: user.color });
+});
+sessionManager.on('user_left', (user) => {
+  broadcast({ type: 'users_update', users: sessionManager.getOnlineUsers() });
+});
+sessionManager.on('tuning_changed', (user) => {
+  broadcast({ type: 'users_update', users: sessionManager.getOnlineUsers() });
+});
+
+edgeNodeManager.on('node_online', (node) => {
+  broadcast({ type: 'edge_nodes', nodes: edgeNodeManager.getNodes() });
+  timelineService.addEvent({ type: 'system', title: `Edge node online: ${node.name}`, description: `${node.hostname} (${node.ip})`, timestamp: Date.now(), icon: '🖥️', color: '#00e676' });
+});
+edgeNodeManager.on('node_offline', (node) => {
+  broadcast({ type: 'edge_nodes', nodes: edgeNodeManager.getNodes() });
+});
+edgeNodeManager.on('heartbeat', () => {
+  broadcast({ type: 'edge_nodes', nodes: edgeNodeManager.getNodes() });
+});
+
+frequencyScanner.on('scan_update', (state) => broadcast({ type: 'scanner_state', state }));
+frequencyScanner.on('signal_detected', (activity) => {
+  broadcast({ type: 'scan_hit', activity });
+  timelineService.addEvent({ type: 'scan_hit', title: `Signal on ${(activity.frequency / 1e6).toFixed(3)} MHz`, description: `${activity.signalStrength.toFixed(0)} dBm`, timestamp: Date.now(), frequency: activity.frequency, icon: '📻', color: '#ffab00' });
+});
+
+signalClassifier.on('classification', (result) => {
+  broadcast({ type: 'classification', result });
+  timelineService.addEvent({ type: 'classification', title: `${result.classification.toUpperCase()} signal classified`, description: `${(result.frequency / 1e6).toFixed(3)} MHz — ${(result.confidence * 100).toFixed(0)}% confidence`, timestamp: Date.now(), frequency: result.frequency, icon: '🧠', color: '#748ffc' });
+});
+
+telemetryService.on('frame', (frame) => {
+  broadcast({ type: 'telemetry_frame', frame });
+});
+
+pluginLoader.on('plugin_changed', () => {
+  broadcast({ type: 'plugins_update', plugins: pluginLoader.getPluginStatus() });
+});
 
 locationService.on('location', (loc) => {
   broadcast({ type: 'location', observer: loc });
@@ -265,9 +337,12 @@ const openApiSpec = {
 app.get('/api/health', (_req, res) => {
   res.json({
     name: 'SignalForge',
-    version: '0.4.0',
+    version: '0.5.0',
     uptime: process.uptime(),
     status: 'operational',
+    usersOnline: sessionManager.getOnlineUsers().length,
+    edgeNodes: edgeNodeManager.getOnlineNodes().length,
+    pluginsLoaded: pluginLoader.getPlugins().length,
     sdrConnections: rtlTcpConnections.size + soapyConnections.size,
     rotatorConnected: rotatorClient?.isConnected || false,
     mqttConnected: mqttClient.getConfig().connected,
@@ -966,6 +1041,254 @@ app.get('/api/presets', (_req, res) => {
 });
 
 // ============================================================================
+// REST API — Multi-User
+// ============================================================================
+app.post('/api/users/join', (req, res) => {
+  const { nickname } = req.body;
+  if (!nickname) return res.status(400).json({ error: 'nickname required' });
+  const session = sessionManager.createSession(nickname);
+  res.json(session);
+});
+
+app.get('/api/users', (_req, res) => {
+  res.json(sessionManager.getOnlineUsers());
+});
+
+app.post('/api/users/tuning', (req, res) => {
+  const { token, frequency, mode, description } = req.body;
+  const session = sessionManager.getSession(token);
+  if (!session) return res.status(401).json({ error: 'Invalid token' });
+  sessionManager.updateTuning(session.id, { frequency, mode, description });
+  res.json({ ok: true });
+});
+
+app.get('/api/chat', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 50;
+  res.json(sessionManager.getChatHistory(limit));
+});
+
+app.post('/api/chat', (req, res) => {
+  const { token, text } = req.body;
+  const session = sessionManager.getSession(token);
+  if (!session) return res.status(401).json({ error: 'Invalid token' });
+  const msg = sessionManager.addChatMessage(session.id, text);
+  res.json(msg);
+});
+
+app.get('/api/shared-observations', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 100;
+  res.json(sessionManager.getObservations(limit));
+});
+
+app.post('/api/shared-observations', (req, res) => {
+  const { token, frequency, mode, description, signalStrength, tags } = req.body;
+  const session = sessionManager.getSession(token);
+  if (!session) return res.status(401).json({ error: 'Invalid token' });
+  const obs = sessionManager.addObservation(session.id, { frequency, mode, description, signalStrength, tags });
+  res.json(obs);
+});
+
+app.post('/api/flowgraphs/export', (req, res) => {
+  const { name, description, nodes, connections, token } = req.body;
+  const session = token ? sessionManager.getSession(token) : null;
+  const exported = {
+    id: `fg-${Date.now()}`, name, description,
+    version: '0.5.0', author: session?.nickname || 'Anonymous',
+    created: Date.now(), nodes, connections,
+  };
+  res.json(exported);
+});
+
+// ============================================================================
+// REST API — Plugins
+// ============================================================================
+app.get('/api/plugins', (_req, res) => {
+  res.json(pluginLoader.getPlugins());
+});
+
+app.get('/api/plugins/status', (_req, res) => {
+  res.json(pluginLoader.getPluginStatus());
+});
+
+app.get('/api/plugins/nodes', (_req, res) => {
+  res.json(pluginLoader.getPluginNodes());
+});
+
+app.post('/api/plugins/:id/enable', (req, res) => {
+  const ok = pluginLoader.enablePlugin(req.params.id);
+  res.json({ ok });
+});
+
+app.post('/api/plugins/:id/disable', (req, res) => {
+  const ok = pluginLoader.disablePlugin(req.params.id);
+  res.json({ ok });
+});
+
+// ============================================================================
+// REST API — Edge Nodes
+// ============================================================================
+app.get('/api/edge/nodes', (_req, res) => {
+  res.json(edgeNodeManager.getNodes());
+});
+
+app.get('/api/edge/nodes/:id', (req, res) => {
+  const node = edgeNodeManager.getNode(req.params.id);
+  if (!node) return res.status(404).json({ error: 'Node not found' });
+  res.json(node);
+});
+
+app.post('/api/edge/nodes/:id/command', (req, res) => {
+  const ok = edgeNodeManager.sendCommand(req.params.id, req.body);
+  res.json({ ok });
+});
+
+app.delete('/api/edge/nodes/:id', (req, res) => {
+  edgeNodeManager.removeNode(req.params.id);
+  res.json({ ok: true });
+});
+
+// ============================================================================
+// REST API — Frequency Scanner
+// ============================================================================
+app.get('/api/scanner/state', (_req, res) => {
+  res.json(frequencyScanner.getState());
+});
+
+app.post('/api/scanner/start', (req, res) => {
+  frequencyScanner.startScan(req.body.configId);
+  res.json(frequencyScanner.getState());
+});
+
+app.post('/api/scanner/stop', (_req, res) => {
+  frequencyScanner.stopScan();
+  res.json(frequencyScanner.getState());
+});
+
+app.get('/api/scanner/configs', (_req, res) => {
+  res.json(frequencyScanner.getConfigs());
+});
+
+app.post('/api/scanner/configs', (req, res) => {
+  res.json(frequencyScanner.addConfig(req.body));
+});
+
+app.get('/api/scanner/list', (_req, res) => {
+  res.json(frequencyScanner.getScanList());
+});
+
+app.post('/api/scanner/list', (req, res) => {
+  res.json(frequencyScanner.addToScanList(req.body));
+});
+
+app.delete('/api/scanner/list/:id', (req, res) => {
+  frequencyScanner.removeFromScanList(req.params.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/scanner/activities', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 100;
+  res.json(frequencyScanner.getActivities(limit));
+});
+
+// ============================================================================
+// REST API — Signal Classifier
+// ============================================================================
+app.post('/api/classifier/classify', (req, res) => {
+  const { frequency } = req.body;
+  if (!frequency) return res.status(400).json({ error: 'frequency required' });
+  res.json(signalClassifier.classify(frequency));
+});
+
+app.get('/api/classifier/results', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 50;
+  res.json(signalClassifier.getResults(limit));
+});
+
+app.get('/api/classifier/config', (_req, res) => {
+  res.json(signalClassifier.getConfig());
+});
+
+app.post('/api/classifier/config', (req, res) => {
+  signalClassifier.updateConfig(req.body);
+  res.json(signalClassifier.getConfig());
+});
+
+// ============================================================================
+// REST API — Timeline
+// ============================================================================
+app.get('/api/timeline', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 200;
+  const offset = parseInt(req.query.offset as string) || 0;
+  const types = req.query.types ? (req.query.types as string).split(',') : undefined;
+  const search = req.query.search as string | undefined;
+  res.json(timelineService.getEvents({ types: types as any, search }, limit, offset));
+});
+
+app.get('/api/timeline/export/:format', (req, res) => {
+  const { format } = req.params;
+  if (format === 'html') {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(timelineService.exportHTML());
+  } else if (format === 'json') {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(timelineService.exportJSON());
+  } else {
+    res.status(400).json({ error: 'Supported: html, json' });
+  }
+});
+
+// ============================================================================
+// REST API — Telemetry
+// ============================================================================
+app.get('/api/telemetry/frames', (req, res) => {
+  const noradId = req.query.noradId ? parseInt(req.query.noradId as string) : undefined;
+  const limit = parseInt(req.query.limit as string) || 50;
+  res.json(telemetryService.getFrames(noradId, limit));
+});
+
+app.get('/api/telemetry/latest/:noradId', (req, res) => {
+  res.json(telemetryService.getLatestValues(parseInt(req.params.noradId)));
+});
+
+app.get('/api/telemetry/series/:noradId/:key', (req, res) => {
+  const series = telemetryService.getTimeSeries(parseInt(req.params.noradId), req.params.key);
+  if (!series) return res.status(404).json({ error: 'No data' });
+  res.json(series);
+});
+
+app.get('/api/telemetry/definitions', (_req, res) => {
+  res.json(telemetryService.getDefinitions());
+});
+
+// ============================================================================
+// REST API — Themes (serve theme list; actual theming is client-side)
+// ============================================================================
+app.get('/api/themes', (_req, res) => {
+  const { THEMES } = require('@signalforge/shared');
+  res.json(THEMES);
+});
+
+// ============================================================================
+// PWA — Service worker and manifest
+// ============================================================================
+app.get('/manifest.json', (_req, res) => {
+  res.json({
+    name: 'SignalForge',
+    short_name: 'SignalForge',
+    description: 'Universal Radio Platform — SDR control, satellite tracking, signal analysis',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#0a0a0f',
+    theme_color: '#00e5ff',
+    orientation: 'any',
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+  });
+});
+
+// ============================================================================
 // Helper: Calculate azimuth/elevation from observer to satellite
 // ============================================================================
 function calculateAzEl(observer: { latitude: number; longitude: number; altitude: number }, satellite: { latitude: number; longitude: number; altitude: number }) {
@@ -995,7 +1318,33 @@ function calculateAzEl(observer: { latitude: number; longitude: number; altitude
 // WebSocket handling
 // ============================================================================
 
-wss.on('connection', (ws: WebSocket) => {
+// Track WebSocket -> user session mapping
+const wsUserMap = new Map<WebSocket, string>();
+
+wss.on('connection', (ws: WebSocket, req) => {
+  const url = new URL(req.url || '/', `http://localhost:${PORT}`);
+  const isEdge = url.searchParams.get('edge') === 'true';
+  const edgeNodeId = url.searchParams.get('nodeId');
+
+  if (isEdge && edgeNodeId) {
+    console.log(`🖥️ Edge node connected: ${edgeNodeId}`);
+    // Edge node WebSocket path
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === 'edge_register') {
+          edgeNodeManager.registerNode(edgeNodeId, msg.info, ws);
+        } else if (msg.type === 'edge_heartbeat') {
+          edgeNodeManager.handleHeartbeat(msg.heartbeat);
+        } else if (msg.type === 'edge_iq_data') {
+          // Forward IQ data from edge to all clients
+          broadcast({ type: 'edge_iq_meta', nodeId: edgeNodeId, ...msg.meta });
+        }
+      } catch { /* ignore binary */ }
+    });
+    return;
+  }
+
   console.log('⚡ Client connected');
 
   // Send initial state
@@ -1003,6 +1352,10 @@ wss.on('connection', (ws: WebSocket) => {
   ws.send(JSON.stringify({ type: 'adsb', aircraft: adsbDecoder.getAircraft() }));
   ws.send(JSON.stringify({ type: 'ais', vessels: aisDecoder.getVessels() }));
   ws.send(JSON.stringify({ type: 'aprs', stations: aprsDecoder.getStations() }));
+  ws.send(JSON.stringify({ type: 'users_update', users: sessionManager.getOnlineUsers() }));
+  ws.send(JSON.stringify({ type: 'edge_nodes', nodes: edgeNodeManager.getNodes() }));
+  ws.send(JSON.stringify({ type: 'plugins_update', plugins: pluginLoader.getPluginStatus() }));
+  ws.send(JSON.stringify({ type: 'scanner_state', state: frequencyScanner.getState() }));
 
   // Send rotator state if connected
   if (rotatorClient?.isConnected) {
@@ -1036,6 +1389,12 @@ wss.on('connection', (ws: WebSocket) => {
   ws.on('close', () => {
     console.log('⚡ Client disconnected');
     if (streamInterval) clearInterval(streamInterval);
+    // Clean up user session
+    const userId = wsUserMap.get(ws);
+    if (userId) {
+      sessionManager.removeSession(userId);
+      wsUserMap.delete(ws);
+    }
   });
 });
 
@@ -1068,6 +1427,38 @@ function handleCommand(ws: WebSocket, msg: Record<string, unknown>) {
     case 'subscribe':
       ws.send(JSON.stringify({ type: 'subscribed', channels: msg.channels }));
       break;
+    // Multi-user WS commands
+    case 'user_join': {
+      const session = sessionManager.createSession(msg.nickname as string);
+      wsUserMap.set(ws, session.id);
+      ws.send(JSON.stringify({ type: 'session', session }));
+      break;
+    }
+    case 'user_heartbeat': {
+      const uid = wsUserMap.get(ws);
+      if (uid) sessionManager.heartbeat(uid);
+      break;
+    }
+    case 'user_tuning': {
+      const uid2 = wsUserMap.get(ws);
+      if (uid2) sessionManager.updateTuning(uid2, msg.tuning as any);
+      break;
+    }
+    case 'user_view': {
+      const uid3 = wsUserMap.get(ws);
+      if (uid3) sessionManager.updateView(uid3, msg.view as string);
+      break;
+    }
+    case 'chat_send': {
+      const uid4 = wsUserMap.get(ws);
+      if (uid4) sessionManager.addChatMessage(uid4, msg.text as string);
+      break;
+    }
+    case 'add_observation': {
+      const uid5 = wsUserMap.get(ws);
+      if (uid5) sessionManager.addObservation(uid5, msg.observation as any);
+      break;
+    }
     default:
       ws.send(JSON.stringify({ type: 'error', message: `Unknown command: ${msg.type}` }));
   }
@@ -1082,7 +1473,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`
   ⚡ ╔═══════════════════════════════════════╗
   ⚡ ║         S I G N A L F O R G E         ║
-  ⚡ ║     Universal Radio Platform v0.4     ║
+  ⚡ ║     Universal Radio Platform v0.5     ║
   ⚡ ╠═══════════════════════════════════════╣
   ⚡ ║  HTTP:  http://0.0.0.0:${PORT}            ║
   ⚡ ║  WS:    ws://0.0.0.0:${PORT}/ws           ║
