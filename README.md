@@ -73,6 +73,21 @@ SignalForge is a **visual, node-based radio signal processing platform** that ru
 - **Dark Sci-Fi UI** — LCARS-meets-mission-control aesthetic. Cyan and amber on dark. Beautiful.
 - **TypeScript Throughout** — Frontend AND backend, unified stack
 
+### 🌍 Phase 8: Next-Gen Features (v0.8.0)
+
+| Feature | Description |
+|---------|-------------|
+| 🌐 **3D Globe** | Interactive globe with satellite orbits, day/night terminator, aircraft/vessel/edge markers, atmospheric glow, city lights. Toggle 2D/3D |
+| ⚡ **WebGPU Compute DSP** | GPU-accelerated FFT, FIR filter, FM demod via compute shaders. WebGL2 fallback. Status indicator |
+| 🤖 **AI Signal Narrator** | LLM-powered frequency descriptions — band identification, anomaly detection, auto-narrate mode |
+| 👥 **Community Hub** | Share/browse flowgraphs, plugin marketplace, user profiles, ratings & comments |
+| 🎓 **Training Academy** | Interactive tutorials (FM, ADS-B, weather sats, SIGINT), quiz system, progress tracking with ranks |
+| 🪟 **Multi-Window** | Pop-out views via BroadcastChannel API, layout presets for multi-monitor setups |
+| ⏪ **Signal Time Machine** | Historical playback — "what was on this frequency at X time", queryable timeline |
+| 🔌 **Integration Hub** | One-click: Home Assistant, Grafana, Telegram, Discord, FlightAware, APRS-IS, Broadcastify, MarineTraffic, Node-RED |
+| 📻 **Equipment Manager** | SDR hardware database, "My Equipment", compatibility matrix, shopping list generator |
+| 🎬 **Cinematic Mode** | Fullscreen visualisation for displays/events — globe, waterfall, aircraft, heatmap, spectrum, satellites. Auto-cycle |
+
 ---
 
 ## Architecture
