@@ -7,7 +7,7 @@
     "source": "manual",
     "lastUpdated": "2026-02-23T01:38:46.189Z"
   },
-  "source": "starlink",
+  "source": "auto",
   "gps": {
     "enabled": false,
     "type": "none"

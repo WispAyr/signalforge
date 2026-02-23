@@ -18,8 +18,18 @@ import { FrequencyScanner } from './components/FrequencyScanner';
 import { TimelineView } from './components/TimelineView';
 import { TelemetryDashboard } from './components/TelemetryDashboard';
 import { ThemeProvider } from './components/ThemeProvider';
+import { ErrorBoundary } from './components/ErrorBoundary';
+// Phase 6
+import { SatNOGSView } from './components/SatNOGSView';
+import { GeofenceView } from './components/GeofenceView';
+import { VoiceDecoderView } from './components/VoiceDecoderView';
+import { PropagationView } from './components/PropagationView';
+import { LogbookView } from './components/LogbookView';
+import { AnalyticsView } from './components/AnalyticsView';
+import { DXClusterView } from './components/DXClusterView';
+import { AudioStreamView } from './components/AudioStreamView';
 
-export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'sdr' | 'analyzer' | 'scheduler' | 'signals' | 'settings' | 'scanner' | 'timeline' | 'telemetry' | 'plugins' | 'edge';
+export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'sdr' | 'analyzer' | 'scheduler' | 'signals' | 'settings' | 'scanner' | 'timeline' | 'telemetry' | 'plugins' | 'edge' | 'satnogs' | 'geofence' | 'voice' | 'propagation' | 'logbook' | 'analytics' | 'dxcluster' | 'audio';
 
 export const App: React.FC = () => {
   const [activeView, setActiveView] = useState<View>('dashboard');
@@ -66,20 +76,30 @@ export const App: React.FC = () => {
           {(activeView === 'flow') && <Sidebar />}
 
           <main className={`flex-1 overflow-hidden relative transition-opacity duration-150 ${transitioning ? 'opacity-0' : 'opacity-100'}`}>
-            {activeView === 'dashboard' && <Dashboard onNavigate={changeView} />}
-            {activeView === 'flow' && <FlowEditor />}
-            {activeView === 'waterfall' && <WaterfallView />}
-            {activeView === 'map' && <MapView />}
-            {activeView === 'sdr' && <SDRPanel />}
-            {activeView === 'analyzer' && <SpectrumAnalyzer />}
-            {activeView === 'scheduler' && <ObservationScheduler />}
-            {activeView === 'signals' && <SignalGuide />}
-            {activeView === 'scanner' && <FrequencyScanner />}
-            {activeView === 'timeline' && <TimelineView />}
-            {activeView === 'telemetry' && <TelemetryDashboard />}
-            {activeView === 'plugins' && <PluginsPage />}
-            {activeView === 'edge' && <EdgeNodesPage />}
-            {activeView === 'settings' && <SettingsPage />}
+            <ErrorBoundary>
+              {activeView === 'dashboard' && <Dashboard onNavigate={changeView} />}
+              {activeView === 'flow' && <FlowEditor />}
+              {activeView === 'waterfall' && <WaterfallView />}
+              {activeView === 'map' && <MapView />}
+              {activeView === 'sdr' && <SDRPanel />}
+              {activeView === 'analyzer' && <SpectrumAnalyzer />}
+              {activeView === 'scheduler' && <ObservationScheduler />}
+              {activeView === 'signals' && <SignalGuide />}
+              {activeView === 'scanner' && <FrequencyScanner />}
+              {activeView === 'timeline' && <TimelineView />}
+              {activeView === 'telemetry' && <TelemetryDashboard />}
+              {activeView === 'plugins' && <PluginsPage />}
+              {activeView === 'edge' && <EdgeNodesPage />}
+              {activeView === 'satnogs' && <SatNOGSView />}
+              {activeView === 'geofence' && <GeofenceView />}
+              {activeView === 'voice' && <VoiceDecoderView />}
+              {activeView === 'propagation' && <PropagationView />}
+              {activeView === 'logbook' && <LogbookView />}
+              {activeView === 'analytics' && <AnalyticsView />}
+              {activeView === 'dxcluster' && <DXClusterView />}
+              {activeView === 'audio' && <AudioStreamView />}
+              {activeView === 'settings' && <SettingsPage />}
+            </ErrorBoundary>
           </main>
 
           {/* Chat panel (floating) */}

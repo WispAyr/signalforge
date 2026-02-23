@@ -13,3 +13,14 @@ export * from './classifier';
 export * from './timeline';
 export * from './telemetry';
 export * from './themes';
+// Phase 6
+export * from './satnogs';
+export * from './waterfall';
+export * from './geofence';
+export * from './voice';
+export * from './propagation';
+export * from './logbook';
+export * from './analytics';
+export * from './dxcluster';
+export * from './audiostream';
+export * from './resilience';

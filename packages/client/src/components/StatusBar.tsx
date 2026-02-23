@@ -6,6 +6,7 @@ export const StatusBar: React.FC = () => {
   const [fps, setFps] = useState(0);
   const [gpuAvailable, setGpuAvailable] = useState(false);
   const [serverStatus, setServerStatus] = useState<{ version: string; uptime: number } | null>(null);
+  const [solarData, setSolarData] = useState<{ solarFlux: number; kIndex: number; geomagField: string } | null>(null);
   const { observer } = useLocationStore();
 
   useEffect(() => {
@@ -44,7 +45,18 @@ export const StatusBar: React.FC = () => {
     };
     checkHealth();
     const healthInterval = setInterval(checkHealth, 30000);
-    return () => clearInterval(healthInterval);
+
+    // Fetch solar data
+    const fetchSolar = async () => {
+      try {
+        const res = await fetch('/api/propagation/solar');
+        setSolarData(await res.json());
+      } catch { /* ignore */ }
+    };
+    fetchSolar();
+    const solarInterval = setInterval(fetchSolar, 300000);
+
+    return () => { clearInterval(healthInterval); clearInterval(solarInterval); };
   }, []);
 
   const utc = time.toISOString().substring(11, 19);
@@ -66,8 +78,18 @@ export const StatusBar: React.FC = () => {
       </span>
 
       <div className="ml-auto flex items-center gap-3">
+        {solarData && (
+          <>
+            <span>SFI:{solarData.solarFlux}</span>
+            <span>K:{solarData.kIndex}</span>
+            <span className={solarData.geomagField === 'quiet' ? 'text-green-400' : solarData.geomagField === 'unsettled' ? 'text-yellow-400' : 'text-red-400'}>
+              {solarData.geomagField?.toUpperCase()}
+            </span>
+            <span className="text-forge-border">│</span>
+          </>
+        )}
         {serverStatus && <span>Uptime: {Math.floor(serverStatus.uptime / 3600)}h{Math.floor((serverStatus.uptime % 3600) / 60)}m</span>}
-        <span>SignalForge v0.3.0</span>
+        <span>SignalForge v0.6.0</span>
         <span className="text-forge-cyan">{utc} UTC</span>
       </div>
     </footer>

@@ -24,12 +24,43 @@ import { FrequencyScanner } from './scanner/service.js';
 import { SignalClassifier } from './classifier/service.js';
 import { TimelineService } from './timeline/service.js';
 import { TelemetryService } from './telemetry/service.js';
+// Phase 6 imports
+import { SatNOGSService } from './satnogs/service.js';
+import { WaterfallRecorder } from './waterfall/recorder.js';
+import { GeofenceService } from './geofence/service.js';
+import { DigitalVoiceDecoder } from './voice/decoder.js';
+import { PropagationService } from './propagation/service.js';
+import { LogbookService } from './logbook/service.js';
+import { AnalyticsService } from './analytics/service.js';
+import { DXClusterService } from './dxcluster/service.js';
+import { AudioStreamingService } from './audio/streaming.js';
 import type { DashboardStats, ActivityFeedItem } from '@signalforge/shared';
 
 const PORT = parseInt(process.env.PORT || '3401');
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+
+// Rate limiting
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW = 60000;
+const RATE_LIMIT_MAX = 200;
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/health') || req.path.startsWith('/api/docs')) return next();
+  const ip = req.ip || 'unknown';
+  const entry = rateLimitMap.get(ip);
+  const now = Date.now();
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
+    return next();
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) {
+    res.setHeader('Retry-After', String(Math.ceil((entry.resetAt - now) / 1000)));
+    return res.status(429).json({ error: 'Too many requests' });
+  }
+  next();
+});
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
@@ -62,11 +93,27 @@ const signalClassifier = new SignalClassifier();
 const timelineService = new TimelineService();
 const telemetryService = new TelemetryService();
 
+// Phase 6 services
+const satnogsService = new SatNOGSService();
+const waterfallRecorder = new WaterfallRecorder();
+const geofenceService = new GeofenceService();
+const voiceDecoder = new DigitalVoiceDecoder();
+const propagationService = new PropagationService();
+const logbookService = new LogbookService();
+const analyticsService = new AnalyticsService();
+const dxClusterService = new DXClusterService();
+const audioStreamingService = new AudioStreamingService();
+
 const locationService = new LocationService();
 locationService.start();
 
 // Start demo telemetry
 telemetryService.startDemoTelemetry();
+
+// Start Phase 6 services
+geofenceService.start();
+propagationService.start();
+voiceDecoder.startDemo();
 
 // Session cleanup interval
 setInterval(() => sessionManager.cleanup(), 60000);
@@ -120,6 +167,64 @@ telemetryService.on('frame', (frame) => {
 
 pluginLoader.on('plugin_changed', () => {
   broadcast({ type: 'plugins_update', plugins: pluginLoader.getPluginStatus() });
+});
+
+// Phase 6 event wiring
+geofenceService.on('geo_alert', (alert) => {
+  broadcast({ type: 'geo_alert', alert });
+  timelineService.addEvent({ type: 'alert', title: `${alert.event.toUpperCase()}: ${alert.entityName}`, description: `Zone: ${alert.zoneName}`, timestamp: Date.now(), icon: '🔔', color: '#ff5252' });
+});
+
+voiceDecoder.on('voice_frame', (frame) => {
+  broadcast({ type: 'voice_frame', frame });
+  analyticsService.recordDecoderMessage(frame.protocol);
+});
+
+propagationService.on('solar_update', (data) => {
+  broadcast({ type: 'solar_update', data });
+});
+propagationService.on('band_update', (conditions) => {
+  broadcast({ type: 'band_update', conditions });
+});
+
+dxClusterService.on('spot', (spot) => {
+  broadcast({ type: 'dx_spot', spot });
+});
+dxClusterService.on('spot_alert', ({ alert, spot }) => {
+  broadcast({ type: 'dx_spot_alert', alert, spot });
+  timelineService.addEvent({ type: 'alert', title: `DX SPOT: ${spot.spotted}`, description: `${(spot.frequency / 1e6).toFixed(3)} MHz ${spot.mode || ''} — ${spot.entity || ''}`, timestamp: Date.now(), icon: '🌍', color: '#ff9100' });
+});
+
+waterfallRecorder.on('recording_started', (rec) => {
+  broadcast({ type: 'waterfall_recording', recording: rec });
+});
+waterfallRecorder.on('recording_stopped', (rec) => {
+  broadcast({ type: 'waterfall_recording', recording: rec });
+});
+
+audioStreamingService.on('stream_created', (stream) => {
+  broadcast({ type: 'audio_streams', streams: audioStreamingService.getActiveStreams() });
+});
+audioStreamingService.on('stream_stopped', () => {
+  broadcast({ type: 'audio_streams', streams: audioStreamingService.getActiveStreams() });
+});
+
+// Feed decoder data into analytics
+adsbDecoder.on('message', (msg) => analyticsService.recordDecoderMessage('ADS-B'));
+acarsDecoder.on('message', () => analyticsService.recordDecoderMessage('ACARS'));
+aisDecoder.on('message', () => analyticsService.recordDecoderMessage('AIS'));
+aprsDecoder.on('message', () => analyticsService.recordDecoderMessage('APRS'));
+
+// Feed aircraft/vessel positions into geofencing
+adsbDecoder.on('message', (msg) => {
+  if (msg.latitude && msg.longitude && msg.callsign) {
+    geofenceService.updateEntityPosition('aircraft', msg.icao || msg.callsign, msg.callsign, msg.latitude, msg.longitude, msg.altitude);
+  }
+});
+aisDecoder.on('message', (msg) => {
+  if (msg.latitude && msg.longitude) {
+    geofenceService.updateEntityPosition('vessel', String(msg.mmsi), msg.shipName || String(msg.mmsi), msg.latitude, msg.longitude);
+  }
 });
 
 locationService.on('location', (loc) => {
@@ -335,11 +440,37 @@ const openApiSpec = {
 // ============================================================================
 
 app.get('/api/health', (_req, res) => {
+  const memUsage = process.memoryUsage();
+  const components = [
+    { name: 'SDR Bridge', status: 'up' as const, lastCheck: Date.now() },
+    { name: 'Satellite Service', status: 'up' as const, lastCheck: Date.now() },
+    { name: 'ADS-B Decoder', status: 'up' as const, lastCheck: Date.now(), details: { aircraft: adsbDecoder.getAircraft().length } },
+    { name: 'AIS Decoder', status: 'up' as const, lastCheck: Date.now(), details: { vessels: aisDecoder.getVessels().length } },
+    { name: 'ACARS Decoder', status: 'up' as const, lastCheck: Date.now() },
+    { name: 'APRS Decoder', status: 'up' as const, lastCheck: Date.now(), details: { stations: aprsDecoder.getStations().length } },
+    { name: 'MQTT', status: (mqttClient.getConfig().connected ? 'up' : 'down') as 'up' | 'down', lastCheck: Date.now() },
+    { name: 'Propagation', status: (propagationService.getSolarData() ? 'up' : 'degraded') as 'up' | 'degraded', lastCheck: Date.now() },
+    { name: 'DX Cluster', status: (dxClusterService.getConfig().connected ? 'up' : 'down') as 'up' | 'down', lastCheck: Date.now() },
+    { name: 'Geofence', status: 'up' as const, lastCheck: Date.now(), details: { zones: geofenceService.getZones().length } },
+    { name: 'Voice Decoder', status: 'up' as const, lastCheck: Date.now() },
+    { name: 'Logbook', status: 'up' as const, lastCheck: Date.now() },
+  ];
+  const allUp = components.every(c => c.status === 'up');
+  const anyDown = components.some(c => c.status === 'down');
   res.json({
+    status: anyDown ? 'degraded' : allUp ? 'healthy' : 'degraded',
     name: 'SignalForge',
-    version: '0.5.0',
+    version: '0.6.0',
     uptime: process.uptime(),
-    status: 'operational',
+    timestamp: Date.now(),
+    components,
+    system: {
+      cpuUsage: 0, // Would need os module
+      memoryUsed: memUsage.heapUsed,
+      memoryTotal: memUsage.heapTotal,
+      nodeVersion: process.version,
+      platform: process.platform,
+    },
     usersOnline: sessionManager.getOnlineUsers().length,
     edgeNodes: edgeNodeManager.getOnlineNodes().length,
     pluginsLoaded: pluginLoader.getPlugins().length,
@@ -1261,6 +1392,323 @@ app.get('/api/telemetry/definitions', (_req, res) => {
 });
 
 // ============================================================================
+// REST API — Phase 6: SatNOGS
+// ============================================================================
+app.get('/api/satnogs/observations', async (req, res) => {
+  const satellite = req.query.satellite ? parseInt(req.query.satellite as string) : undefined;
+  const limit = parseInt(req.query.limit as string) || 50;
+  res.json(await satnogsService.getObservations({ satellite, limit }));
+});
+
+app.get('/api/satnogs/transmitters/:noradId', async (req, res) => {
+  res.json(await satnogsService.getTransmitters(parseInt(req.params.noradId)));
+});
+
+app.get('/api/satnogs/stations', async (_req, res) => {
+  res.json(await satnogsService.getStations());
+});
+
+app.post('/api/satnogs/submit', async (req, res) => {
+  res.json(await satnogsService.submitObservation(req.body));
+});
+
+app.post('/api/satnogs/auto-configure/:noradId', async (req, res) => {
+  const config = await satnogsService.autoConfigureFlowgraph(parseInt(req.params.noradId), req.body.satelliteName || 'Unknown');
+  if (!config) return res.status(404).json({ error: 'No transmitters found' });
+  res.json(config);
+});
+
+// ============================================================================
+// REST API — Phase 6: Waterfall Recording
+// ============================================================================
+app.post('/api/waterfall/record/start', (req, res) => {
+  res.json(waterfallRecorder.startRecording(req.body));
+});
+
+app.post('/api/waterfall/record/:id/stop', (req, res) => {
+  const rec = waterfallRecorder.stopRecording(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'Recording not found' });
+  res.json(rec);
+});
+
+app.get('/api/waterfall/recordings', (_req, res) => {
+  res.json(waterfallRecorder.getActiveRecordings());
+});
+
+app.get('/api/waterfall/gallery', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 50;
+  res.json(waterfallRecorder.getGallery(limit));
+});
+
+app.post('/api/waterfall/recordings/:id/annotate', (req, res) => {
+  const ann = waterfallRecorder.addAnnotation(req.params.id, req.body);
+  if (!ann) return res.status(404).json({ error: 'Recording not found' });
+  res.json(ann);
+});
+
+app.delete('/api/waterfall/recordings/:id/annotations/:annId', (req, res) => {
+  waterfallRecorder.removeAnnotation(req.params.id, req.params.annId);
+  res.json({ ok: true });
+});
+
+app.delete('/api/waterfall/recordings/:id', (req, res) => {
+  waterfallRecorder.deleteRecording(req.params.id);
+  res.json({ ok: true });
+});
+
+// ============================================================================
+// REST API — Phase 6: Geo-Fencing
+// ============================================================================
+app.get('/api/geofence/zones', (_req, res) => {
+  res.json(geofenceService.getZones());
+});
+
+app.post('/api/geofence/zones', (req, res) => {
+  res.json(geofenceService.addZone(req.body));
+});
+
+app.put('/api/geofence/zones/:id', (req, res) => {
+  const zone = geofenceService.updateZone(req.params.id, req.body);
+  if (!zone) return res.status(404).json({ error: 'Zone not found' });
+  res.json(zone);
+});
+
+app.delete('/api/geofence/zones/:id', (req, res) => {
+  geofenceService.removeZone(req.params.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/geofence/alerts', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 100;
+  res.json(geofenceService.getAlerts(limit));
+});
+
+app.post('/api/geofence/alerts/:id/ack', (req, res) => {
+  res.json({ ok: geofenceService.acknowledgeAlert(req.params.id) });
+});
+
+// ============================================================================
+// REST API — Phase 6: Digital Voice
+// ============================================================================
+app.get('/api/voice/decoders', (_req, res) => {
+  res.json(voiceDecoder.getDecoderStates());
+});
+
+app.post('/api/voice/decoders/:protocol/enable', (req, res) => {
+  const state = voiceDecoder.enableDecoder(req.params.protocol as any, req.body.frequency);
+  if (!state) return res.status(404).json({ error: 'Unknown protocol' });
+  res.json(state);
+});
+
+app.post('/api/voice/decoders/:protocol/disable', (req, res) => {
+  const state = voiceDecoder.disableDecoder(req.params.protocol as any);
+  if (!state) return res.status(404).json({ error: 'Unknown protocol' });
+  res.json(state);
+});
+
+app.get('/api/voice/frames', (req, res) => {
+  const protocol = req.query.protocol as string | undefined;
+  const limit = parseInt(req.query.limit as string) || 100;
+  res.json(voiceDecoder.getFrames(protocol as any, limit));
+});
+
+app.get('/api/voice/talkgroups', (_req, res) => {
+  res.json(voiceDecoder.getTalkgroups());
+});
+
+// ============================================================================
+// REST API — Phase 6: Propagation
+// ============================================================================
+app.get('/api/propagation/solar', async (_req, res) => {
+  const data = propagationService.getSolarData();
+  if (!data) {
+    res.json(await propagationService.fetchSolarData());
+  } else {
+    res.json(data);
+  }
+});
+
+app.get('/api/propagation/bands', (_req, res) => {
+  res.json(propagationService.getBandConditions());
+});
+
+app.get('/api/propagation/predict', (req, res) => {
+  const from = (req.query.from as string) || 'IO91';
+  const to = (req.query.to as string) || 'FN31';
+  res.json(propagationService.predict(from, to));
+});
+
+app.get('/api/propagation/greyline', (_req, res) => {
+  res.json(propagationService.getGreyline());
+});
+
+// ============================================================================
+// REST API — Phase 6: Logbook
+// ============================================================================
+app.get('/api/logbook', (req, res) => {
+  const opts = {
+    callsign: req.query.callsign as string | undefined,
+    band: req.query.band as string | undefined,
+    mode: req.query.mode as string | undefined,
+    search: req.query.search as string | undefined,
+    limit: parseInt(req.query.limit as string) || 100,
+    offset: parseInt(req.query.offset as string) || 0,
+  };
+  res.json(logbookService.getEntries(opts));
+});
+
+app.post('/api/logbook', (req, res) => {
+  res.json(logbookService.addEntry(req.body));
+});
+
+app.put('/api/logbook/:id', (req, res) => {
+  const entry = logbookService.updateEntry(req.params.id, req.body);
+  if (!entry) return res.status(404).json({ error: 'Entry not found' });
+  res.json(entry);
+});
+
+app.delete('/api/logbook/:id', (req, res) => {
+  logbookService.deleteEntry(req.params.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/logbook/stats', (_req, res) => {
+  res.json(logbookService.getStats());
+});
+
+app.get('/api/logbook/export/adif', (_req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.setHeader('Content-Disposition', 'attachment; filename=signalforge-logbook.adi');
+  res.send(logbookService.exportADIF());
+});
+
+app.post('/api/logbook/import/adif', (req, res) => {
+  const content = req.body.content;
+  if (!content) return res.status(400).json({ error: 'content required' });
+  const count = logbookService.importADIF(content);
+  res.json({ imported: count });
+});
+
+// ============================================================================
+// REST API — Phase 6: Analytics
+// ============================================================================
+app.get('/api/analytics/heatmap', (req, res) => {
+  const hours = parseInt(req.query.hours as string) || 24;
+  res.json(analyticsService.getHeatmap(hours));
+});
+
+app.get('/api/analytics/frequencies', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 20;
+  res.json(analyticsService.getBusiestFrequencies(limit));
+});
+
+app.get('/api/analytics/decoders', (_req, res) => {
+  res.json(analyticsService.getDecoderStats());
+});
+
+app.get('/api/analytics/nodes', (_req, res) => {
+  res.json(analyticsService.getEdgeNodeMetrics());
+});
+
+app.get('/api/analytics/observations', (_req, res) => {
+  res.json(analyticsService.getObservationStats());
+});
+
+app.get('/api/analytics/report', (req, res) => {
+  const hours = parseInt(req.query.hours as string) || 24;
+  res.json(analyticsService.getReport(hours));
+});
+
+// ============================================================================
+// REST API — Phase 6: DX Cluster
+// ============================================================================
+app.get('/api/dxcluster/config', (_req, res) => {
+  res.json(dxClusterService.getConfig());
+});
+
+app.post('/api/dxcluster/connect', (req, res) => {
+  res.json(dxClusterService.connect(req.body.host, req.body.port, req.body.callsign));
+});
+
+app.post('/api/dxcluster/disconnect', (_req, res) => {
+  res.json(dxClusterService.disconnect());
+});
+
+app.get('/api/dxcluster/spots', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 100;
+  res.json(dxClusterService.getSpots(limit));
+});
+
+app.post('/api/dxcluster/filters', (req, res) => {
+  res.json(dxClusterService.addFilter(req.body));
+});
+
+app.delete('/api/dxcluster/filters/:id', (req, res) => {
+  dxClusterService.removeFilter(req.params.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/dxcluster/alerts', (_req, res) => {
+  res.json(dxClusterService.getAlerts());
+});
+
+app.post('/api/dxcluster/alerts', (req, res) => {
+  res.json(dxClusterService.addAlert(req.body));
+});
+
+app.delete('/api/dxcluster/alerts/:id', (req, res) => {
+  dxClusterService.removeAlert(req.params.id);
+  res.json({ ok: true });
+});
+
+// ============================================================================
+// REST API — Phase 6: Audio Streaming
+// ============================================================================
+app.get('/api/audio/streams', (_req, res) => {
+  res.json(audioStreamingService.getStreams());
+});
+
+app.post('/api/audio/streams', (req, res) => {
+  res.json(audioStreamingService.createStream(req.body));
+});
+
+app.post('/api/audio/streams/:id/stop', (req, res) => {
+  res.json({ ok: audioStreamingService.stopStream(req.params.id) });
+});
+
+app.post('/api/audio/streams/:id/join', (req, res) => {
+  res.json({ ok: audioStreamingService.joinStream(req.params.id) });
+});
+
+app.post('/api/audio/streams/:id/leave', (req, res) => {
+  res.json({ ok: audioStreamingService.leaveStream(req.params.id) });
+});
+
+app.get('/api/audio/config', (_req, res) => {
+  res.json(audioStreamingService.getConfig());
+});
+
+app.post('/api/audio/config', (req, res) => {
+  res.json(audioStreamingService.updateConfig(req.body));
+});
+
+app.get('/api/audio/rooms', (_req, res) => {
+  res.json(audioStreamingService.getChatRooms());
+});
+
+app.post('/api/audio/rooms', (req, res) => {
+  res.json(audioStreamingService.createChatRoom(req.body.name, req.body.maxParticipants));
+});
+
+app.post('/api/audio/rooms/:id/join', (req, res) => {
+  res.json({ ok: audioStreamingService.joinChatRoom(req.params.id, req.body.userId, req.body.nickname) });
+});
+
+app.post('/api/audio/rooms/:id/leave', (req, res) => {
+  res.json({ ok: audioStreamingService.leaveChatRoom(req.params.id, req.body.userId) });
+});
+
+// ============================================================================
 // REST API — Themes (serve theme list; actual theming is client-side)
 // ============================================================================
 app.get('/api/themes', (_req, res) => {
@@ -1469,11 +1917,52 @@ satelliteService.loadTLEs().then(() => {
   addActivity({ type: 'system', icon: '🛰️', title: 'TLE Data Loaded', detail: 'Active satellites catalogue updated', timestamp: Date.now() });
 });
 
+// ============================================================================
+// Graceful Shutdown
+// ============================================================================
+let shuttingDown = false;
+async function gracefulShutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n⚡ ${signal} received — graceful shutdown`);
+
+  // Stop accepting new connections
+  server.close();
+
+  // Stop services
+  geofenceService.stop();
+  propagationService.stop();
+  voiceDecoder.stopDemo();
+  frequencyScanner.stopScan();
+  spectrumAnalyzer.stopSweep();
+
+  // Disconnect SDR
+  for (const [, c] of rtlTcpConnections) c.disconnect();
+  for (const [, c] of soapyConnections) c.disconnect();
+  if (rotatorClient?.isConnected) rotatorClient.disconnect();
+  mqttClient.disconnect();
+
+  // Close all websockets
+  wss.clients.forEach(ws => ws.close());
+
+  console.log('⚡ Shutdown complete');
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Structured logging helper
+function logInfo(component: string, message: string, data?: Record<string, unknown>) {
+  const entry = { level: 'info', timestamp: new Date().toISOString(), component, message, ...data };
+  console.log(JSON.stringify(entry));
+}
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`
   ⚡ ╔═══════════════════════════════════════╗
   ⚡ ║         S I G N A L F O R G E         ║
-  ⚡ ║     Universal Radio Platform v0.5     ║
+  ⚡ ║     Universal Radio Platform v0.6     ║
   ⚡ ╠═══════════════════════════════════════╣
   ⚡ ║  HTTP:  http://0.0.0.0:${PORT}            ║
   ⚡ ║  WS:    ws://0.0.0.0:${PORT}/ws           ║
