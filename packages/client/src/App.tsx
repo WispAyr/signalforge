@@ -195,18 +195,22 @@ export const App: React.FC = () => {
               }`}
               role="main"
             >
-              {/* Flow editor node palette */}
-              {activeView === 'flow' && (
-                <Suspense fallback={null}>
-                  <FlowSidebar />
-                </Suspense>
-              )}
-
               <ErrorBoundary>
                 <Suspense fallback={<ViewLoader />}>
-                  <div className="flex-1 h-full min-h-0 animate-[fadeIn_200ms_ease-out]">
-                    {renderView()}
-                  </div>
+                  {activeView === 'flow' ? (
+                    <div className="flex-1 h-full min-h-0 flex animate-[fadeIn_200ms_ease-out]">
+                      <Suspense fallback={null}>
+                        <FlowSidebar />
+                      </Suspense>
+                      <div className="flex-1 h-full min-h-0">
+                        {renderView()}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 h-full min-h-0 animate-[fadeIn_200ms_ease-out]">
+                      {renderView()}
+                    </div>
+                  )}
                 </Suspense>
               </ErrorBoundary>
             </main>
