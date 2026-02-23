@@ -2308,6 +2308,15 @@ app.post('/api/websdr/disconnect', (_req, res) => {
 });
 
 // WebSDR audio → broadcast to WS clients as binary
+// Time Machine IQ → WebSocket
+timeMachineService.on('iq_data', (data: any) => {
+  broadcastBinary(data.samples);
+  broadcast({ type: 'timemachine_iq', sampleRate: data.sampleRate, centerFrequency: data.centerFrequency, position: data.position });
+});
+timeMachineService.on('state', (state: any) => {
+  broadcast({ type: 'timemachine_state', state });
+});
+
 webSDRService.on('audio', (audioData: Buffer) => {
   // Tag the binary so clients know it's WebSDR audio
   const header = Buffer.from([0x57, 0x53, 0x44]); // 'WSD'

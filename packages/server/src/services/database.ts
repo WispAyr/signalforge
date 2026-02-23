@@ -10,7 +10,8 @@ if (!fs.existsSync(RECORDINGS_DIR)) fs.mkdirSync(RECORDINGS_DIR, { recursive: tr
 
 const DB_PATH = path.join(DATA_DIR, 'signalforge.db');
 
-const db = new Database(DB_PATH);
+import type BetterSqlite3 from 'better-sqlite3';
+const db: BetterSqlite3.Database = new Database(DB_PATH);
 
 // Performance settings
 db.pragma('journal_mode = WAL');
