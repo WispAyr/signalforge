@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useLocationStore } from '../stores/location';
 
 export const StatusBar: React.FC = () => {
   const [time, setTime] = useState(new Date());
   const [fps, setFps] = useState(0);
   const [gpuAvailable, setGpuAvailable] = useState(false);
+  const [serverStatus, setServerStatus] = useState<{ version: string; uptime: number } | null>(null);
+  const { observer } = useLocationStore();
 
   useEffect(() => {
     const interval = setInterval(() => setTime(new Date()), 1000);
@@ -11,7 +14,6 @@ export const StatusBar: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Check WebGPU availability
     if ('gpu' in navigator) {
       (navigator as unknown as { gpu: { requestAdapter: () => Promise<unknown> } }).gpu
         .requestAdapter()
@@ -19,7 +21,6 @@ export const StatusBar: React.FC = () => {
         .catch(() => setGpuAvailable(false));
     }
 
-    // FPS counter
     let frames = 0;
     let lastTime = performance.now();
     const countFrame = () => {
@@ -33,6 +34,17 @@ export const StatusBar: React.FC = () => {
       requestAnimationFrame(countFrame);
     };
     requestAnimationFrame(countFrame);
+
+    // Server health check
+    const checkHealth = async () => {
+      try {
+        const res = await fetch('/api/health');
+        setServerStatus(await res.json());
+      } catch { /* ignore */ }
+    };
+    checkHealth();
+    const healthInterval = setInterval(checkHealth, 30000);
+    return () => clearInterval(healthInterval);
   }, []);
 
   const utc = time.toISOString().substring(11, 19);
@@ -46,12 +58,16 @@ export const StatusBar: React.FC = () => {
       <span className="mx-3 text-forge-border">│</span>
       <span>{fps} FPS</span>
       <span className="mx-3 text-forge-border">│</span>
-      <span>Nodes: 0</span>
+      <span>📍 {observer.latitude.toFixed(2)}°, {observer.longitude.toFixed(2)}° ({observer.source})</span>
       <span className="mx-3 text-forge-border">│</span>
-      <span>Connections: 0</span>
+      <span className="flex items-center gap-1">
+        <span className={`w-1.5 h-1.5 rounded-full ${serverStatus ? 'bg-forge-green' : 'bg-forge-red'}`} />
+        Server {serverStatus ? 'OK' : '—'}
+      </span>
 
       <div className="ml-auto flex items-center gap-3">
-        <span>SignalForge v0.1.0</span>
+        {serverStatus && <span>Uptime: {Math.floor(serverStatus.uptime / 3600)}h{Math.floor((serverStatus.uptime % 3600) / 60)}m</span>}
+        <span>SignalForge v0.3.0</span>
         <span className="text-forge-cyan">{utc} UTC</span>
       </div>
     </footer>

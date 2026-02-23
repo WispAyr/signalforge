@@ -12,6 +12,8 @@ interface NodePaletteItem {
 const NODE_PALETTE: NodePaletteItem[] = [
   // Sources
   { type: 'sdr_source', name: 'SDR Source', category: 'source', icon: '📡', color: '#00e5ff' },
+  { type: 'sdr_source_2', name: 'SDR Source 2', category: 'source', icon: '📡', color: '#00e5ff' },
+  { type: 'websdr_source', name: 'WebSDR', category: 'source', icon: '🌍', color: '#00e5ff' },
   { type: 'file_source', name: 'File Source', category: 'source', icon: '📁', color: '#00e5ff' },
   { type: 'noise_gen', name: 'Noise Gen', category: 'source', icon: '〰️', color: '#00e5ff' },
   { type: 'tone_gen', name: 'Tone Gen', category: 'source', icon: '🔊', color: '#00e5ff' },
@@ -29,7 +31,8 @@ const NODE_PALETTE: NodePaletteItem[] = [
   { type: 'ais_decoder', name: 'AIS', category: 'decoder', icon: '🚢', color: '#aa00ff' },
   { type: 'aprs_decoder', name: 'APRS', category: 'decoder', icon: '📍', color: '#aa00ff' },
   { type: 'apt_decoder', name: 'NOAA APT', category: 'decoder', icon: '🌦️', color: '#aa00ff' },
-  { type: 'lora_decoder', name: 'LoRa', category: 'decoder', icon: '📡', color: '#aa00ff' },
+  { type: 'lrpt_decoder', name: 'METEOR LRPT', category: 'decoder', icon: '🛰️', color: '#aa00ff' },
+  { type: 'lora_decoder', name: 'LoRa', category: 'decoder', icon: '📶', color: '#aa00ff' },
   // Analysis
   { type: 'fft', name: 'FFT', category: 'analysis', icon: '📊', color: '#ff1744' },
   { type: 'waterfall', name: 'Waterfall', category: 'analysis', icon: '≋', color: '#ff1744' },
@@ -59,7 +62,7 @@ const CATEGORIES: { id: NodeCategory; label: string }[] = [
 
 export const Sidebar: React.FC = () => {
   const [expandedCategories, setExpandedCategories] = useState<Set<NodeCategory>>(
-    new Set(['source', 'demodulator', 'analysis'])
+    new Set(['source', 'demodulator', 'decoder', 'analysis'])
   );
 
   const toggleCategory = (cat: NodeCategory) => {

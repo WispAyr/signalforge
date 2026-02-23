@@ -170,6 +170,36 @@ Both projects demonstrated that the future of software-defined radio is open, vi
 
 ---
 
+---
+
+## 🙏 Acknowledgements / Inspired By
+
+SignalForge stands on the shoulders of these excellent projects:
+
+### [Ground Station](https://github.com/sgoudelis/ground-station) by sgoudelis
+A remarkably complete satellite monitoring suite — SDR abstraction, multi-VFO DSP, automated observation scheduling, weather satellite decoding, telemetry parsing. Directly inspired SignalForge's satellite tracking, SDR integration, and observation scheduling architecture. If you need a production-ready Python-based ground station, check it out.
+
+### [CyberEther](https://github.com/aspect-build/cyberether)
+Browser-based GPU-accelerated flowgraph engine. Inspired the flow-based visual pipeline architecture and the vision for WebGPU-accelerated signal processing in the browser. The idea that DSP pipelines should be visual and interactive came from studying CyberEther's approach.
+
+### [CelesTrak](https://celestrak.org)
+Dr. T.S. Kelso's satellite tracking data service — the essential source for TLE orbital data that makes satellite pass prediction possible.
+
+### [OpenStreetMap](https://www.openstreetmap.org) / [Nominatim](https://nominatim.openstreetmap.org)
+Open geocoding service used for the place-name search in the observer location system. No API key needed, free for everyone.
+
+### [WebSDR](http://websdr.org)
+Pieter-Tjerk de Boer's network of publicly accessible software-defined radio receivers. The WebSDR integration lets users explore radio worldwide without owning hardware.
+
+### Key Libraries
+- **[satellite.js](https://github.com/shashwatak/satellite-js)** — SGP4/SDP4 satellite propagation in JavaScript
+- **[React](https://react.dev)** — UI framework
+- **[Vite](https://vitejs.dev)** — Build tooling
+- **[Express](https://expressjs.com)** — HTTP server
+- **[Turborepo](https://turbo.build)** — Monorepo build system
+
+---
+
 ## License
 
 MIT © [WispAyr](https://github.com/WispAyr)

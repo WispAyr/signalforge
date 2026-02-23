@@ -52,6 +52,9 @@ const NODE_PORTS: Record<string, { inputs: string[]; outputs: string[] }> = {
   gain: { inputs: ['iq'], outputs: ['iq'] },
   mixer: { inputs: ['iq', 'iq'], outputs: ['iq'] },
   resample: { inputs: ['iq'], outputs: ['iq'] },
+  websdr_source: { inputs: [], outputs: ['iq', 'audio'] },
+  sdr_source_2: { inputs: [], outputs: ['iq'] },
+  lrpt_decoder: { inputs: ['iq'], outputs: ['packets'] },
 };
 
 const NODE_PARAMS: Record<string, Array<{ id: string; label: string; type: 'number' | 'select' | 'text'; default: unknown; options?: string[] }>> = {
@@ -70,6 +73,19 @@ const NODE_PARAMS: Record<string, Array<{ id: string; label: string; type: 'numb
     { id: 'size', label: 'FFT Size', type: 'select', default: '4096', options: ['1024', '2048', '4096', '8192', '16384'] },
   ],
   adsb_decoder: [{ id: 'host', label: 'dump1090 Host', type: 'text', default: '127.0.0.1' }],
+  websdr_source: [
+    { id: 'url', label: 'WebSDR URL', type: 'text', default: 'http://websdr.ewi.utwente.nl:8901' },
+    { id: 'freq', label: 'Frequency (Hz)', type: 'number', default: 7074000 },
+    { id: 'mode', label: 'Mode', type: 'select', default: 'usb', options: ['am', 'fm', 'lsb', 'usb', 'cw'] },
+  ],
+  recorder: [
+    { id: 'format', label: 'Format', type: 'select', default: 'wav', options: ['wav', 'iq', 'raw'] },
+    { id: 'prefix', label: 'Filename Prefix', type: 'text', default: 'recording' },
+  ],
+  audio_out: [
+    { id: 'volume', label: 'Volume', type: 'number', default: 80 },
+    { id: 'squelch', label: 'Squelch (dB)', type: 'number', default: -100 },
+  ],
 };
 
 // Default demo flowgraph

@@ -4,3 +4,4 @@ export * from './satellite';
 export * from './dsp';
 export * from './decoders';
 export * from './location';
+export * from './signals';

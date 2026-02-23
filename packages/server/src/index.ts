@@ -9,6 +9,7 @@ import { ACARSDecoder } from './decoders/acars.js';
 import { AISDecoder } from './decoders/ais.js';
 import { APRSDecoder } from './decoders/aprs.js';
 import { LocationService } from './location/service.js';
+import { SignalDatabaseService } from './signals/database.js';
 import type { DashboardStats, ActivityFeedItem } from '@signalforge/shared';
 
 const PORT = parseInt(process.env.PORT || '3401');
@@ -26,6 +27,7 @@ const adsbDecoder = new ADSBDecoder();
 const acarsDecoder = new ACARSDecoder();
 const aisDecoder = new AISDecoder();
 const aprsDecoder = new APRSDecoder();
+const signalDb = new SignalDatabaseService();
 
 const locationService = new LocationService();
 locationService.start();
@@ -49,7 +51,6 @@ function addActivity(item: Omit<ActivityFeedItem, 'id'>) {
   const entry: ActivityFeedItem = { ...item, id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` };
   activityFeed.unshift(entry);
   if (activityFeed.length > MAX_ACTIVITY) activityFeed.pop();
-  // Broadcast to WS clients
   broadcast({ type: 'activity', item: entry });
 }
 
@@ -85,6 +86,31 @@ function broadcast(data: unknown) {
   });
 }
 
+// ── Satellite pass notification scheduler ──────────────────────────────
+setInterval(async () => {
+  try {
+    const obs = locationService.getObserver();
+    const passes = await satelliteService.predictPasses(
+      { name: obs.name || 'Observer', latitude: obs.latitude, longitude: obs.longitude, altitude: obs.altitude },
+      1 // next hour
+    );
+    for (const pass of passes) {
+      const aosMs = new Date(pass.aos).getTime();
+      const now = Date.now();
+      const minsUntil = (aosMs - now) / 60000;
+      if (minsUntil > 0 && minsUntil <= 5 && pass.maxElevation >= 20) {
+        const notif = signalDb.addNotification({
+          type: 'satellite_pass',
+          title: `🛰️ ${pass.satellite} pass in ${Math.round(minsUntil)}m`,
+          message: `Max el: ${pass.maxElevation.toFixed(0)}° — Duration: ${pass.duration}s`,
+          data: { pass },
+        });
+        broadcast({ type: 'notification', notification: notif });
+      }
+    }
+  } catch { /* ignore */ }
+}, 60000);
+
 // ============================================================================
 // REST endpoints
 // ============================================================================
@@ -92,7 +118,7 @@ function broadcast(data: unknown) {
 app.get('/api/health', (_req, res) => {
   res.json({
     name: 'SignalForge',
-    version: '0.2.0',
+    version: '0.3.0',
     uptime: process.uptime(),
     status: 'operational',
   });
@@ -123,6 +149,21 @@ app.post('/api/observer', (req, res) => {
   }
   locationService.setLocation({ latitude, longitude, altitude: altitude || 0, name, source: source || 'manual' });
   res.json(locationService.getObserver());
+});
+
+// --- Geocoding proxy (Nominatim) ---
+app.get('/api/geocode', async (req, res) => {
+  const q = req.query.q as string;
+  if (!q) return res.status(400).json({ error: 'q parameter required' });
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`, {
+      headers: { 'User-Agent': 'SignalForge/0.3' },
+    });
+    const results = await response.json();
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 app.get('/api/devices', (_req, res) => {
@@ -215,6 +256,60 @@ app.get('/api/aprs', (_req, res) => {
   res.json(aprsDecoder.getStations());
 });
 
+// --- Signal Database ---
+app.get('/api/signals', (req, res) => {
+  const query = req.query.q as string | undefined;
+  const category = req.query.category as string | undefined;
+  res.json(signalDb.getSignals(query, category));
+});
+
+app.get('/api/signals/identify', (req, res) => {
+  const freq = parseFloat(req.query.freq as string);
+  if (isNaN(freq)) return res.status(400).json({ error: 'freq parameter required' });
+  const tolerance = parseFloat(req.query.tolerance as string) || 500e3;
+  res.json(signalDb.identifyFrequency(freq, tolerance));
+});
+
+// --- Bookmarks ---
+app.get('/api/bookmarks', (_req, res) => {
+  res.json(signalDb.getBookmarks());
+});
+
+app.post('/api/bookmarks', (req, res) => {
+  const bm = signalDb.addBookmark(req.body);
+  res.json(bm);
+});
+
+app.delete('/api/bookmarks/:id', (req, res) => {
+  signalDb.removeBookmark(req.params.id);
+  res.json({ ok: true });
+});
+
+// --- Recordings ---
+app.get('/api/recordings', (_req, res) => {
+  res.json(signalDb.getRecordings());
+});
+
+// --- Notifications ---
+app.get('/api/notifications', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 50;
+  res.json(signalDb.getNotifications(limit));
+});
+
+app.get('/api/notifications/configs', (_req, res) => {
+  res.json(signalDb.getNotificationConfigs());
+});
+
+app.post('/api/notifications/configs', (req, res) => {
+  signalDb.setNotificationConfig(req.body);
+  res.json({ ok: true });
+});
+
+app.post('/api/notifications/:id/read', (req, res) => {
+  signalDb.markNotificationRead(req.params.id);
+  res.json({ ok: true });
+});
+
 // --- Dashboard ---
 app.get('/api/dashboard', async (_req, res) => {
   const sats = await satelliteService.getSatellites();
@@ -273,6 +368,40 @@ app.get('/api/presets', (_req, res) => {
         { sourceNode: 3, sourcePort: 'audio-out-0', targetNode: 4, targetPort: 'audio-in-0' },
         { sourceNode: 0, sourcePort: 'iq-out-0', targetNode: 5, targetPort: 'iq-in-0' },
         { sourceNode: 5, sourcePort: 'fft-out-0', targetNode: 6, targetPort: 'fft-in-0' },
+      ],
+    },
+    {
+      id: 'weather-sat', name: 'Weather Satellite', description: 'NOAA APT weather image decoding',
+      icon: '🌦️', category: 'satellite',
+      nodes: [
+        { type: 'sdr_source', position: { x: 80, y: 200 }, params: { freq: 137.62e6, rate: 1e6 } },
+        { type: 'fm_demod', position: { x: 340, y: 200 }, params: { bandwidth: 40000 } },
+        { type: 'apt_decoder', position: { x: 580, y: 200 }, params: {} },
+        { type: 'recorder', position: { x: 580, y: 340 }, params: {} },
+        { type: 'fft', position: { x: 340, y: 80 }, params: { size: 4096 } },
+        { type: 'waterfall', position: { x: 580, y: 80 }, params: {} },
+      ],
+      connections: [
+        { sourceNode: 0, sourcePort: 'iq-out-0', targetNode: 1, targetPort: 'iq-in-0' },
+        { sourceNode: 1, sourcePort: 'audio-out-0', targetNode: 2, targetPort: 'audio-in-0' },
+        { sourceNode: 1, sourcePort: 'audio-out-0', targetNode: 3, targetPort: 'audio-in-0' },
+        { sourceNode: 0, sourcePort: 'iq-out-0', targetNode: 4, targetPort: 'iq-in-0' },
+        { sourceNode: 4, sourcePort: 'fft-out-0', targetNode: 5, targetPort: 'fft-in-0' },
+      ],
+    },
+    {
+      id: 'websdr-listener', name: 'WebSDR Listener', description: 'Listen to remote WebSDR receivers worldwide',
+      icon: '🌍', category: 'source',
+      nodes: [
+        { type: 'websdr_source', position: { x: 80, y: 200 }, params: { url: 'http://websdr.ewi.utwente.nl:8901' } },
+        { type: 'audio_out', position: { x: 340, y: 200 }, params: {} },
+        { type: 'fft', position: { x: 340, y: 80 }, params: { size: 4096 } },
+        { type: 'spectrum', position: { x: 580, y: 80 }, params: {} },
+      ],
+      connections: [
+        { sourceNode: 0, sourcePort: 'audio-out-0', targetNode: 1, targetPort: 'audio-in-0' },
+        { sourceNode: 0, sourcePort: 'iq-out-0', targetNode: 2, targetPort: 'iq-in-0' },
+        { sourceNode: 2, sourcePort: 'fft-out-0', targetNode: 3, targetPort: 'fft-in-0' },
       ],
     },
     {
@@ -357,7 +486,6 @@ function handleCommand(ws: WebSocket, msg: Record<string, unknown>) {
       ws.send(JSON.stringify({ type: 'status', deviceId: 'demo', streaming: false }));
       break;
     case 'subscribe':
-      // Client subscribes to specific data streams
       ws.send(JSON.stringify({ type: 'subscribed', channels: msg.channels }));
       break;
     default:
@@ -374,7 +502,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`
   ⚡ ╔═══════════════════════════════════════╗
   ⚡ ║         S I G N A L F O R G E         ║
-  ⚡ ║     Universal Radio Platform v0.2     ║
+  ⚡ ║     Universal Radio Platform v0.3     ║
   ⚡ ╠═══════════════════════════════════════╣
   ⚡ ║  HTTP:  http://0.0.0.0:${PORT}            ║
   ⚡ ║  WS:    ws://0.0.0.0:${PORT}/ws           ║

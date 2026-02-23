@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { DashboardStats, ActivityFeedItem, FlowPreset } from '@signalforge/shared';
 import { useLocationStore } from '../stores/location';
 
-type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'split';
+import type { View } from '../App';
 
 interface DashboardProps {
   onNavigate: (view: View) => void;
@@ -129,11 +129,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       </div>
 
       {/* View shortcuts */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         {[
           { view: 'map' as View, label: 'GLOBAL MAP', desc: 'Satellites, aircraft, vessels, APRS stations', icon: '🌍', color: '#00e5ff' },
           { view: 'waterfall' as View, label: 'SPECTRUM ANALYZER', desc: 'Waterfall & spectrum display', icon: '≋', color: '#ffab00' },
           { view: 'flow' as View, label: 'FLOW EDITOR', desc: 'Signal processing flowgraphs', icon: '◇', color: '#00e676' },
+          { view: 'signals' as View, label: 'SIGNAL GUIDE', desc: 'Frequency database & bookmarks', icon: '📡', color: '#aa00ff' },
         ].map((item) => (
           <button
             key={item.view}

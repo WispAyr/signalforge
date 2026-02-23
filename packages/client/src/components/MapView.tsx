@@ -146,7 +146,7 @@ export const MapView: React.FC = () => {
     ctx.beginPath(); ctx.arc(obs.x, obs.y, 12, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = '#ffffff';
     ctx.font = '10px "JetBrains Mono"';
-    ctx.fillText('📍 AYR', obs.x + 16, obs.y + 4);
+    ctx.fillText(`📍 ${obsStore.name || `${observer.lat.toFixed(2)}°`}`, obs.x + 16, obs.y + 4);
 
     const time = Date.now() / 1000;
 
