@@ -1,5 +1,9 @@
-import React, { useRef, useCallback, useState, useEffect } from 'react';
+import React, { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import type { FlowNode, FlowConnection, NodeCategory } from '@signalforge/shared';
+
+// ============================================================================
+// Types
+// ============================================================================
 
 interface EditorNode extends FlowNode {
   name: string;
@@ -11,7 +15,7 @@ interface EditorNode extends FlowNode {
 }
 
 interface DragState {
-  type: 'node' | 'pan' | 'wire' | null;
+  type: 'node' | 'pan' | 'wire' | 'box-select' | null;
   nodeId?: string;
   offsetX?: number;
   offsetY?: number;
@@ -19,7 +23,39 @@ interface DragState {
   startY?: number;
   wireFrom?: { nodeId: string; portId: string; portType: string; x: number; y: number };
   wireEnd?: { x: number; y: number };
+  wireCompatible?: boolean;
+  boxStart?: { x: number; y: number };
+  boxEnd?: { x: number; y: number };
+  multiOffsets?: Map<string, { dx: number; dy: number }>;
 }
+
+interface ContextMenu {
+  x: number;
+  y: number;
+  nodeId: string;
+}
+
+interface SavedFlow {
+  id: string;
+  name: string;
+  nodes: EditorNode[];
+  connections: FlowConnection[];
+  savedAt: number;
+}
+
+interface HistoryEntry {
+  nodes: EditorNode[];
+  connections: FlowConnection[];
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const GRID_SNAP = 20;
+const MAX_HISTORY = 50;
+const AUTOSAVE_INTERVAL = 30000;
+const API_BASE = '/api';
 
 const PORT_COLORS: Record<string, string> = {
   iq: '#00e5ff', audio: '#00e676', fft: '#ffab00', bits: '#ff1744', packets: '#aa00ff', control: '#6a6a8a',
@@ -97,36 +133,260 @@ const NODE_PARAMS: Record<string, Array<{ id: string; label: string; type: 'numb
   ],
 };
 
-// Default demo flowgraph
-const DEFAULT_NODES: EditorNode[] = [
-  { id: 'n1', type: 'sdr_source', position: { x: 80, y: 200 }, params: { freq: 100e6, rate: 2.4e6 }, name: 'SDR Source', icon: '📡', color: '#00e5ff', category: 'source', width: 160, height: 80 },
-  { id: 'n2', type: 'fft', position: { x: 340, y: 120 }, params: { size: 4096 }, name: 'FFT', icon: '📊', color: '#ff1744', category: 'analysis', width: 140, height: 70 },
-  { id: 'n3', type: 'waterfall', position: { x: 580, y: 80 }, params: {}, name: 'Waterfall', icon: '≋', color: '#ff1744', category: 'analysis', width: 150, height: 70 },
-  { id: 'n4', type: 'bandpass', position: { x: 340, y: 280 }, params: { low: -50000, high: 50000 }, name: 'Band Pass', icon: '◇', color: '#00e676', category: 'filter', width: 150, height: 70 },
-  { id: 'n5', type: 'fm_demod', position: { x: 580, y: 250 }, params: { bandwidth: 200000 }, name: 'FM Demod', icon: 'FM', color: '#ffab00', category: 'demodulator', width: 150, height: 70 },
-  { id: 'n6', type: 'audio_out', position: { x: 820, y: 250 }, params: {}, name: 'Audio Out', icon: '🔈', color: '#6a6a8a', category: 'output', width: 140, height: 70 },
-  { id: 'n7', type: 'spectrum', position: { x: 580, y: 380 }, params: {}, name: 'Spectrum', icon: '📈', color: '#ff1744', category: 'analysis', width: 150, height: 70 },
-];
+// Node metadata for creating from palette drags
+const NODE_META: Record<string, { name: string; icon: string; color: string; category: NodeCategory }> = {
+  sdr_source: { name: 'SDR Source', icon: '📡', color: '#00e5ff', category: 'source' },
+  sdr_source_2: { name: 'SDR Source 2', icon: '📡', color: '#00e5ff', category: 'source' },
+  file_source: { name: 'File Source', icon: '📁', color: '#00e5ff', category: 'source' },
+  noise_gen: { name: 'Noise Gen', icon: '〰️', color: '#00e5ff', category: 'source' },
+  tone_gen: { name: 'Tone Gen', icon: '🔊', color: '#00e5ff', category: 'source' },
+  websdr_source: { name: 'WebSDR', icon: '🌍', color: '#00e5ff', category: 'source' },
+  aaronia_source: { name: 'Aaronia', icon: '📡', color: '#00e5ff', category: 'source' },
+  lowpass: { name: 'Low Pass', icon: '▽', color: '#00e676', category: 'filter' },
+  highpass: { name: 'High Pass', icon: '△', color: '#00e676', category: 'filter' },
+  bandpass: { name: 'Band Pass', icon: '◇', color: '#00e676', category: 'filter' },
+  fm_demod: { name: 'FM Demod', icon: 'FM', color: '#ffab00', category: 'demodulator' },
+  am_demod: { name: 'AM Demod', icon: 'AM', color: '#ffab00', category: 'demodulator' },
+  ssb_demod: { name: 'SSB Demod', icon: 'SSB', color: '#ffab00', category: 'demodulator' },
+  adsb_decoder: { name: 'ADS-B', icon: '✈️', color: '#aa00ff', category: 'decoder' },
+  acars_decoder: { name: 'ACARS', icon: '📡', color: '#aa00ff', category: 'decoder' },
+  ais_decoder: { name: 'AIS', icon: '🚢', color: '#aa00ff', category: 'decoder' },
+  aprs_decoder: { name: 'APRS', icon: '📍', color: '#aa00ff', category: 'decoder' },
+  apt_decoder: { name: 'NOAA APT', icon: '🌦️', color: '#aa00ff', category: 'decoder' },
+  lrpt_decoder: { name: 'METEOR LRPT', icon: '🛰️', color: '#aa00ff', category: 'decoder' },
+  lora_decoder: { name: 'LoRa', icon: '📶', color: '#aa00ff', category: 'decoder' },
+  fft: { name: 'FFT', icon: '📊', color: '#ff1744', category: 'analysis' },
+  waterfall: { name: 'Waterfall', icon: '≋', color: '#ff1744', category: 'analysis' },
+  spectrum: { name: 'Spectrum', icon: '📈', color: '#ff1744', category: 'analysis' },
+  audio_out: { name: 'Audio Out', icon: '🔈', color: '#6a6a8a', category: 'output' },
+  recorder: { name: 'Recorder', icon: '⏺️', color: '#6a6a8a', category: 'output' },
+  sat_tracker: { name: 'Sat Tracker', icon: '🛰️', color: '#00b8d4', category: 'satellite' },
+  doppler: { name: 'Doppler', icon: '🎯', color: '#00b8d4', category: 'satellite' },
+  gain: { name: 'Gain', icon: '⬆️', color: '#ffffff', category: 'math' },
+  mixer: { name: 'Mixer', icon: '✕', color: '#ffffff', category: 'math' },
+  resample: { name: 'Resample', icon: '↕️', color: '#ffffff', category: 'math' },
+};
 
-const DEFAULT_CONNECTIONS: FlowConnection[] = [
-  { id: 'c1', sourceNode: 'n1', sourcePort: 'iq-out-0', targetNode: 'n2', targetPort: 'iq-in-0' },
-  { id: 'c2', sourceNode: 'n2', sourcePort: 'fft-out-0', targetNode: 'n3', targetPort: 'fft-in-0' },
-  { id: 'c3', sourceNode: 'n1', sourcePort: 'iq-out-0', targetNode: 'n4', targetPort: 'iq-in-0' },
-  { id: 'c4', sourceNode: 'n4', sourcePort: 'iq-out-0', targetNode: 'n5', targetPort: 'iq-in-0' },
-  { id: 'c5', sourceNode: 'n5', sourcePort: 'audio-out-0', targetNode: 'n6', targetPort: 'audio-in-0' },
-  { id: 'c6', sourceNode: 'n2', sourcePort: 'fft-out-0', targetNode: 'n7', targetPort: 'fft-in-0' },
-];
+// ============================================================================
+// Flow Templates
+// ============================================================================
+
+function makeNode(id: string, type: string, x: number, y: number, params: Record<string, unknown> = {}): EditorNode {
+  const meta = NODE_META[type] || { name: type, icon: '?', color: '#888', category: 'source' as NodeCategory };
+  return { id, type, position: { x, y }, params, name: meta.name, icon: meta.icon, color: meta.color, category: meta.category, width: 150, height: 70 };
+}
+
+const FLOW_TEMPLATES: Record<string, { name: string; icon: string; nodes: EditorNode[]; connections: FlowConnection[] }> = {
+  'fm-receiver': {
+    name: 'FM Receiver', icon: '📻',
+    nodes: [
+      makeNode('n1', 'sdr_source', 80, 200, { freq: 100e6, rate: 2.4e6 }),
+      makeNode('n2', 'fft', 340, 120, { size: 4096 }),
+      makeNode('n3', 'waterfall', 580, 80),
+      makeNode('n4', 'bandpass', 340, 280, { low: -50000, high: 50000 }),
+      makeNode('n5', 'fm_demod', 580, 250, { bandwidth: 200000 }),
+      makeNode('n6', 'audio_out', 820, 250),
+      makeNode('n7', 'spectrum', 580, 380),
+    ],
+    connections: [
+      { id: 'c1', sourceNode: 'n1', sourcePort: 'iq-out-0', targetNode: 'n2', targetPort: 'iq-in-0' },
+      { id: 'c2', sourceNode: 'n2', sourcePort: 'fft-out-0', targetNode: 'n3', targetPort: 'fft-in-0' },
+      { id: 'c3', sourceNode: 'n1', sourcePort: 'iq-out-0', targetNode: 'n4', targetPort: 'iq-in-0' },
+      { id: 'c4', sourceNode: 'n4', sourcePort: 'iq-out-0', targetNode: 'n5', targetPort: 'iq-in-0' },
+      { id: 'c5', sourceNode: 'n5', sourcePort: 'audio-out-0', targetNode: 'n6', targetPort: 'audio-in-0' },
+      { id: 'c6', sourceNode: 'n2', sourcePort: 'fft-out-0', targetNode: 'n7', targetPort: 'fft-in-0' },
+    ],
+  },
+  'adsb-tracker': {
+    name: 'ADS-B Tracker', icon: '✈️',
+    nodes: [
+      makeNode('n1', 'sdr_source', 80, 200, { freq: 1090e6, rate: 2e6 }),
+      makeNode('n2', 'adsb_decoder', 380, 200),
+      makeNode('n3', 'fft', 380, 80, { size: 4096 }),
+      makeNode('n4', 'waterfall', 620, 80),
+    ],
+    connections: [
+      { id: 'c1', sourceNode: 'n1', sourcePort: 'iq-out-0', targetNode: 'n2', targetPort: 'iq-in-0' },
+      { id: 'c2', sourceNode: 'n1', sourcePort: 'iq-out-0', targetNode: 'n3', targetPort: 'iq-in-0' },
+      { id: 'c3', sourceNode: 'n3', sourcePort: 'fft-out-0', targetNode: 'n4', targetPort: 'fft-in-0' },
+    ],
+  },
+  'satellite-pass': {
+    name: 'Satellite Pass', icon: '🛰️',
+    nodes: [
+      makeNode('n1', 'sdr_source', 80, 200, { freq: 137.5e6, rate: 1e6 }),
+      makeNode('n2', 'sat_tracker', 80, 380),
+      makeNode('n3', 'doppler', 340, 260),
+      makeNode('n4', 'fft', 580, 140, { size: 4096 }),
+      makeNode('n5', 'waterfall', 800, 100),
+      makeNode('n6', 'spectrum', 800, 240),
+    ],
+    connections: [
+      { id: 'c1', sourceNode: 'n1', sourcePort: 'iq-out-0', targetNode: 'n3', targetPort: 'iq-in-0' },
+      { id: 'c2', sourceNode: 'n2', sourcePort: 'control-out-0', targetNode: 'n3', targetPort: 'control-in-0' },  // control-in-1 doesn't exist so use 0-based
+      { id: 'c3', sourceNode: 'n3', sourcePort: 'iq-out-0', targetNode: 'n4', targetPort: 'iq-in-0' },
+      { id: 'c4', sourceNode: 'n4', sourcePort: 'fft-out-0', targetNode: 'n5', targetPort: 'fft-in-0' },
+      { id: 'c5', sourceNode: 'n4', sourcePort: 'fft-out-0', targetNode: 'n6', targetPort: 'fft-in-0' },
+    ],
+  },
+  'aprs-monitor': {
+    name: 'APRS Monitor', icon: '📍',
+    nodes: [
+      makeNode('n1', 'sdr_source', 80, 200, { freq: 144.8e6, rate: 250000 }),
+      makeNode('n2', 'fm_demod', 340, 200, { bandwidth: 12500 }),
+      makeNode('n3', 'aprs_decoder', 600, 200),
+      makeNode('n4', 'fft', 340, 80, { size: 4096 }),
+      makeNode('n5', 'waterfall', 600, 80),
+    ],
+    connections: [
+      { id: 'c1', sourceNode: 'n1', sourcePort: 'iq-out-0', targetNode: 'n2', targetPort: 'iq-in-0' },
+      { id: 'c2', sourceNode: 'n2', sourcePort: 'audio-out-0', targetNode: 'n3', targetPort: 'audio-in-0' },
+      { id: 'c3', sourceNode: 'n1', sourcePort: 'iq-out-0', targetNode: 'n4', targetPort: 'iq-in-0' },
+      { id: 'c4', sourceNode: 'n4', sourcePort: 'fft-out-0', targetNode: 'n5', targetPort: 'fft-in-0' },
+    ],
+  },
+  'wideband-scanner': {
+    name: 'Wideband Scanner', icon: '📊',
+    nodes: [
+      makeNode('n1', 'sdr_source', 80, 200, { freq: 100e6, rate: 2.4e6 }),
+      makeNode('n2', 'fft', 340, 200, { size: 8192 }),
+      makeNode('n3', 'spectrum', 600, 140),
+      makeNode('n4', 'waterfall', 600, 280),
+    ],
+    connections: [
+      { id: 'c1', sourceNode: 'n1', sourcePort: 'iq-out-0', targetNode: 'n2', targetPort: 'iq-in-0' },
+      { id: 'c2', sourceNode: 'n2', sourcePort: 'fft-out-0', targetNode: 'n3', targetPort: 'fft-in-0' },
+      { id: 'c3', sourceNode: 'n2', sourcePort: 'fft-out-0', targetNode: 'n4', targetPort: 'fft-in-0' },
+    ],
+  },
+};
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+const snapToGrid = (v: number) => Math.round(v / GRID_SNAP) * GRID_SNAP;
+
+let idCounter = Date.now();
+const nextId = (prefix: string) => `${prefix}${++idCounter}`;
+
+// ============================================================================
+// Component
+// ============================================================================
 
 export const FlowEditor: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [nodes, setNodes] = useState<EditorNode[]>(DEFAULT_NODES);
-  const [connections, setConnections] = useState<FlowConnection[]>(DEFAULT_CONNECTIONS);
+  const [nodes, setNodes] = useState<EditorNode[]>(FLOW_TEMPLATES['fm-receiver'].nodes);
+  const [connections, setConnections] = useState<FlowConnection[]>(FLOW_TEMPLATES['fm-receiver'].connections);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [drag, setDrag] = useState<DragState>({ type: null });
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
   const [showConfig, setShowConfig] = useState(false);
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const [showLoadDropdown, setShowLoadDropdown] = useState(false);
+  const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
+  const [flowName, setFlowName] = useState('Untitled Flow');
+  const [hoveredPort, setHoveredPort] = useState<{ nodeId: string; portId: string; portType: string; x: number; y: number } | null>(null);
   const animFrame = useRef<number>(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Undo/redo history
+  const historyRef = useRef<HistoryEntry[]>([{ nodes: FLOW_TEMPLATES['fm-receiver'].nodes, connections: FLOW_TEMPLATES['fm-receiver'].connections }]);
+  const historyIndexRef = useRef(0);
+
+  const pushHistory = useCallback((newNodes: EditorNode[], newConns: FlowConnection[]) => {
+    const hist = historyRef.current;
+    // Truncate future
+    hist.splice(historyIndexRef.current + 1);
+    hist.push({ nodes: JSON.parse(JSON.stringify(newNodes)), connections: JSON.parse(JSON.stringify(newConns)) });
+    if (hist.length > MAX_HISTORY) hist.shift();
+    historyIndexRef.current = hist.length - 1;
+  }, []);
+
+  const undo = useCallback(() => {
+    if (historyIndexRef.current <= 0) return;
+    historyIndexRef.current--;
+    const entry = historyRef.current[historyIndexRef.current];
+    setNodes(JSON.parse(JSON.stringify(entry.nodes)));
+    setConnections(JSON.parse(JSON.stringify(entry.connections)));
+  }, []);
+
+  const redo = useCallback(() => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    historyIndexRef.current++;
+    const entry = historyRef.current[historyIndexRef.current];
+    setNodes(JSON.parse(JSON.stringify(entry.nodes)));
+    setConnections(JSON.parse(JSON.stringify(entry.connections)));
+  }, []);
+
+  // Save/Load
+  const [savedFlows, setSavedFlows] = useState<SavedFlow[]>(() => {
+    try { return JSON.parse(localStorage.getItem('signalforge-flows') || '[]'); } catch { return []; }
+  });
+
+  const saveFlow = useCallback(() => {
+    const flow: SavedFlow = { id: nextId('f'), name: flowName, nodes, connections, savedAt: Date.now() };
+    const updated = [...savedFlows.filter(f => f.name !== flowName), flow];
+    setSavedFlows(updated);
+    localStorage.setItem('signalforge-flows', JSON.stringify(updated));
+    // POST to server
+    fetch(`${API_BASE}/flows`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(flow) }).catch(() => {});
+  }, [nodes, connections, flowName, savedFlows]);
+
+  const loadFlow = useCallback((flow: SavedFlow) => {
+    setNodes(flow.nodes);
+    setConnections(flow.connections);
+    setFlowName(flow.name);
+    setSelectedNodes(new Set());
+    setShowConfig(false);
+    pushHistory(flow.nodes, flow.connections);
+    setShowLoadDropdown(false);
+  }, [pushHistory]);
+
+  const newFlow = useCallback(() => {
+    setNodes([]);
+    setConnections([]);
+    setFlowName('Untitled Flow');
+    setSelectedNodes(new Set());
+    setShowConfig(false);
+    pushHistory([], []);
+  }, [pushHistory]);
+
+  const loadTemplate = useCallback((key: string) => {
+    const tpl = FLOW_TEMPLATES[key];
+    if (!tpl) return;
+    const n = JSON.parse(JSON.stringify(tpl.nodes));
+    const c = JSON.parse(JSON.stringify(tpl.connections));
+    setNodes(n);
+    setConnections(c);
+    setFlowName(tpl.name);
+    setSelectedNodes(new Set());
+    pushHistory(n, c);
+    setShowTemplateDropdown(false);
+  }, [pushHistory]);
+
+  // Auto-save
+  useEffect(() => {
+    const interval = setInterval(() => {
+      localStorage.setItem('signalforge-autosave', JSON.stringify({ nodes, connections, name: flowName }));
+    }, AUTOSAVE_INTERVAL);
+    return () => clearInterval(interval);
+  }, [nodes, connections, flowName]);
+
+  // Load autosave on mount
+  useEffect(() => {
+    try {
+      const auto = JSON.parse(localStorage.getItem('signalforge-autosave') || 'null');
+      if (auto?.nodes?.length) {
+        setNodes(auto.nodes);
+        setConnections(auto.connections || []);
+        setFlowName(auto.name || 'Untitled Flow');
+        historyRef.current = [{ nodes: auto.nodes, connections: auto.connections || [] }];
+        historyIndexRef.current = 0;
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   const getPortPos = useCallback((node: EditorNode, portId: string, isInput: boolean): { x: number; y: number } => {
     const ports = NODE_PORTS[node.type] || { inputs: [], outputs: [] };
@@ -141,12 +401,47 @@ export const FlowEditor: React.FC = () => {
     };
   }, []);
 
-  // Check port type compatibility for connections
-  const arePortsCompatible = useCallback((srcType: string, tgtType: string): boolean => {
-    return srcType === tgtType;
-  }, []);
+  const screenToWorld = useCallback((sx: number, sy: number) => ({
+    x: (sx - pan.x) / zoom,
+    y: (sy - pan.y) / zoom,
+  }), [pan, zoom]);
 
+  const findPort = useCallback((worldX: number, worldY: number, isInput?: boolean): { nodeId: string; portId: string; portType: string; x: number; y: number } | null => {
+    for (const node of nodes) {
+      const ports = NODE_PORTS[node.type] || { inputs: [], outputs: [] };
+      if (isInput !== false) {
+        for (let i = 0; i < ports.inputs.length; i++) {
+          const portId = `${ports.inputs[i]}-in-${i}`;
+          const pos = getPortPos(node, portId, true);
+          if (Math.hypot(worldX - pos.x, worldY - pos.y) < 10) {
+            return { nodeId: node.id, portId, portType: ports.inputs[i], x: pos.x, y: pos.y };
+          }
+        }
+      }
+      if (isInput !== true) {
+        for (let i = 0; i < ports.outputs.length; i++) {
+          const portId = `${ports.outputs[i]}-out-${i}`;
+          const pos = getPortPos(node, portId, false);
+          if (Math.hypot(worldX - pos.x, worldY - pos.y) < 10) {
+            return { nodeId: node.id, portId, portType: ports.outputs[i], x: pos.x, y: pos.y };
+          }
+        }
+      }
+    }
+    return null;
+  }, [nodes, getPortPos]);
+
+  // Selected node (first in set, for config panel)
+  const selectedNode = useMemo(() => {
+    if (selectedNodes.size !== 1) return null;
+    const id = selectedNodes.values().next().value;
+    return nodes.find(n => n.id === id) || null;
+  }, [selectedNodes, nodes]);
+
+  // ============================================================================
   // Canvas rendering
+  // ============================================================================
+
   const render = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -182,7 +477,9 @@ export const FlowEditor: React.FC = () => {
       ctx.beginPath(); ctx.moveTo(startX, y); ctx.lineTo(endX, y); ctx.stroke();
     }
 
-    // Connections
+    const time = Date.now() / 1000;
+
+    // Connections — animated dashed flow
     for (const conn of connections) {
       const srcNode = nodes.find((n) => n.id === conn.sourceNode);
       const tgtNode = nodes.find((n) => n.id === conn.targetNode);
@@ -192,20 +489,30 @@ export const FlowEditor: React.FC = () => {
       const tgt = getPortPos(tgtNode, conn.targetPort, true);
       const dx = Math.abs(tgt.x - src.x) * 0.5;
 
+      const portType = conn.sourcePort.split('-')[0];
+      const color = PORT_COLORS[portType] || '#00e5ff';
+
+      // Solid base wire
       ctx.beginPath();
       ctx.moveTo(src.x, src.y);
       ctx.bezierCurveTo(src.x + dx, src.y, tgt.x - dx, tgt.y, tgt.x, tgt.y);
-
-      const time = Date.now() / 1000;
-      const alpha = 0.5 + 0.3 * Math.sin(time * 2 + parseInt(conn.id.slice(1)));
-      const portType = conn.sourcePort.split('-')[0];
-      const color = PORT_COLORS[portType] || '#00e5ff';
-      ctx.strokeStyle = color.slice(0, 7) + Math.round(alpha * 255).toString(16).padStart(2, '0');
+      ctx.strokeStyle = color + '60';
       ctx.lineWidth = 2;
       ctx.shadowColor = color;
-      ctx.shadowBlur = 6;
+      ctx.shadowBlur = 4;
       ctx.stroke();
       ctx.shadowBlur = 0;
+
+      // Animated flow dashes
+      ctx.beginPath();
+      ctx.moveTo(src.x, src.y);
+      ctx.bezierCurveTo(src.x + dx, src.y, tgt.x - dx, tgt.y, tgt.x, tgt.y);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([8, 6]);
+      ctx.lineDashOffset = -time * 40;
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     // Wire being drawn
@@ -218,7 +525,7 @@ export const FlowEditor: React.FC = () => {
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
       ctx.bezierCurveTo(from.x + dx, from.y, worldTo.x - dx, worldTo.y, worldTo.x, worldTo.y);
-      ctx.strokeStyle = PORT_COLORS[from.portType] || '#00e5ff';
+      ctx.strokeStyle = drag.wireCompatible === false ? '#ff1744' : (PORT_COLORS[from.portType] || '#00e5ff');
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 4]);
       ctx.stroke();
@@ -227,19 +534,25 @@ export const FlowEditor: React.FC = () => {
 
     // Nodes
     for (const node of nodes) {
-      const isSelected = node.id === selectedNode;
+      const isSelected = selectedNodes.has(node.id);
+
+      // Shadow
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetY = 2;
 
       ctx.fillStyle = isSelected ? 'rgba(0, 229, 255, 0.08)' : 'rgba(18, 18, 26, 0.95)';
       ctx.strokeStyle = isSelected ? node.color : node.color + '40';
       ctx.lineWidth = isSelected ? 2 : 1;
 
-      const r = 8;
+      const r = 10;
       ctx.beginPath();
       ctx.roundRect(node.position.x, node.position.y, node.width, node.height, r);
       ctx.fill();
       if (isSelected) { ctx.shadowColor = node.color; ctx.shadowBlur = 15; }
       ctx.stroke();
       ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
 
       // Header bar
       ctx.fillStyle = node.color + '20';
@@ -249,7 +562,7 @@ export const FlowEditor: React.FC = () => {
 
       // Category line
       ctx.fillStyle = node.color;
-      ctx.fillRect(node.position.x, node.position.y, 3, node.height);
+      ctx.fillRect(node.position.x, node.position.y + 4, 3, node.height - 8);
 
       // Title
       ctx.fillStyle = '#e0e0e8';
@@ -260,71 +573,113 @@ export const FlowEditor: React.FC = () => {
       const ports = NODE_PORTS[node.type] || { inputs: [], outputs: [] };
 
       ports.inputs.forEach((portType, i) => {
-        const pos = getPortPos(node, `${portType}-in-${i}`, true);
+        const portId = `${portType}-in-${i}`;
+        const pos = getPortPos(node, portId, true);
+        const isHovered = hoveredPort?.nodeId === node.id && hoveredPort?.portId === portId;
         ctx.fillStyle = PORT_COLORS[portType] || '#666';
-        ctx.beginPath(); ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(pos.x, pos.y, isHovered ? 7 : 5, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = '#0a0a0f'; ctx.lineWidth = 2; ctx.stroke();
-        // Port label
-        ctx.fillStyle = PORT_COLORS[portType] + '80' || '#666';
-        ctx.font = '8px "JetBrains Mono"';
+        // Port label (always show, dim unless hovered)
+        ctx.fillStyle = isHovered ? (PORT_COLORS[portType] || '#666') : (PORT_COLORS[portType] + '60' || '#666');
+        ctx.font = `${isHovered ? 9 : 8}px "JetBrains Mono"`;
         ctx.fillText(portType.toUpperCase(), pos.x + 8, pos.y + 3);
       });
 
       ports.outputs.forEach((portType, i) => {
-        const pos = getPortPos(node, `${portType}-out-${i}`, false);
+        const portId = `${portType}-out-${i}`;
+        const pos = getPortPos(node, portId, false);
+        const isHovered = hoveredPort?.nodeId === node.id && hoveredPort?.portId === portId;
         ctx.fillStyle = PORT_COLORS[portType] || '#666';
-        ctx.beginPath(); ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(pos.x, pos.y, isHovered ? 7 : 5, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = '#0a0a0f'; ctx.lineWidth = 2; ctx.stroke();
-        ctx.fillStyle = PORT_COLORS[portType] + '80' || '#666';
-        ctx.font = '8px "JetBrains Mono"';
+        ctx.fillStyle = isHovered ? (PORT_COLORS[portType] || '#666') : (PORT_COLORS[portType] + '60' || '#666');
+        ctx.font = `${isHovered ? 9 : 8}px "JetBrains Mono"`;
         ctx.textAlign = 'right';
         ctx.fillText(portType.toUpperCase(), pos.x - 8, pos.y + 3);
         ctx.textAlign = 'left';
       });
     }
 
+    // Box selection
+    if (drag.type === 'box-select' && drag.boxStart && drag.boxEnd) {
+      const bs = drag.boxStart;
+      const be = drag.boxEnd;
+      ctx.fillStyle = 'rgba(0, 229, 255, 0.08)';
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.rect(Math.min(bs.x, be.x), Math.min(bs.y, be.y), Math.abs(be.x - bs.x), Math.abs(be.y - bs.y));
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     ctx.restore();
+
+    // ── Minimap ──
+    if (nodes.length > 0) {
+      const mmW = 160, mmH = 100, mmPad = 12;
+      const mmX = rect.width - mmW - mmPad;
+      const mmY = rect.height - mmH - mmPad;
+
+      // Bounds
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const n of nodes) {
+        minX = Math.min(minX, n.position.x);
+        minY = Math.min(minY, n.position.y);
+        maxX = Math.max(maxX, n.position.x + n.width);
+        maxY = Math.max(maxY, n.position.y + n.height);
+      }
+      const pad = 40;
+      minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+      const rangeX = maxX - minX || 1;
+      const rangeY = maxY - minY || 1;
+      const scale = Math.min(mmW / rangeX, mmH / rangeY);
+
+      ctx.fillStyle = 'rgba(10, 10, 15, 0.85)';
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(mmX, mmY, mmW, mmH, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // Nodes
+      for (const n of nodes) {
+        const nx = mmX + (n.position.x - minX) * scale;
+        const ny = mmY + (n.position.y - minY) * scale;
+        const nw = Math.max(n.width * scale, 3);
+        const nh = Math.max(n.height * scale, 2);
+        ctx.fillStyle = selectedNodes.has(n.id) ? n.color : n.color + '80';
+        ctx.fillRect(nx, ny, nw, nh);
+      }
+
+      // Viewport rect
+      const vpLeft = (-pan.x / zoom - minX) * scale + mmX;
+      const vpTop = (-pan.y / zoom - minY) * scale + mmY;
+      const vpW = (rect.width / zoom) * scale;
+      const vpH = (rect.height / zoom) * scale;
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(vpLeft, vpTop, vpW, vpH);
+    }
+
     animFrame.current = requestAnimationFrame(render);
-  }, [nodes, connections, pan, zoom, selectedNode, getPortPos, drag]);
+  }, [nodes, connections, pan, zoom, selectedNodes, getPortPos, drag, hoveredPort]);
 
   useEffect(() => {
     animFrame.current = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animFrame.current);
   }, [render]);
 
-  const screenToWorld = (sx: number, sy: number) => ({
-    x: (sx - pan.x) / zoom,
-    y: (sy - pan.y) / zoom,
-  });
+  // ============================================================================
+  // Mouse handlers
+  // ============================================================================
 
-  // Find port near a world position
-  const findPort = useCallback((worldX: number, worldY: number, isInput?: boolean): { nodeId: string; portId: string; portType: string; x: number; y: number } | null => {
-    for (const node of nodes) {
-      const ports = NODE_PORTS[node.type] || { inputs: [], outputs: [] };
-
-      if (isInput !== false) {
-        for (let i = 0; i < ports.inputs.length; i++) {
-          const portId = `${ports.inputs[i]}-in-${i}`;
-          const pos = getPortPos(node, portId, true);
-          if (Math.hypot(worldX - pos.x, worldY - pos.y) < 10) {
-            return { nodeId: node.id, portId, portType: ports.inputs[i], x: pos.x, y: pos.y };
-          }
-        }
-      }
-      if (isInput !== true) {
-        for (let i = 0; i < ports.outputs.length; i++) {
-          const portId = `${ports.outputs[i]}-out-${i}`;
-          const pos = getPortPos(node, portId, false);
-          if (Math.hypot(worldX - pos.x, worldY - pos.y) < 10) {
-            return { nodeId: node.id, portId, portType: ports.outputs[i], x: pos.x, y: pos.y };
-          }
-        }
-      }
-    }
-    return null;
-  }, [nodes, getPortPos]);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 2) return; // right-click handled by context menu
+    setContextMenu(null);
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
@@ -336,6 +691,7 @@ export const FlowEditor: React.FC = () => {
         type: 'wire',
         wireFrom: port,
         wireEnd: { x: e.clientX - rect.left, y: e.clientY - rect.top },
+        wireCompatible: undefined,
       });
       return;
     }
@@ -345,35 +701,74 @@ export const FlowEditor: React.FC = () => {
       const n = nodes[i];
       if (world.x >= n.position.x && world.x <= n.position.x + n.width &&
           world.y >= n.position.y && world.y <= n.position.y + n.height) {
-        setSelectedNode(n.id);
+
+        if (e.shiftKey) {
+          // Toggle selection
+          setSelectedNodes(prev => {
+            const next = new Set(prev);
+            if (next.has(n.id)) next.delete(n.id); else next.add(n.id);
+            return next;
+          });
+        } else if (!selectedNodes.has(n.id)) {
+          setSelectedNodes(new Set([n.id]));
+        }
         setShowConfig(true);
-        setDrag({ type: 'node', nodeId: n.id, offsetX: world.x - n.position.x, offsetY: world.y - n.position.y });
+
+        // Calculate offsets for all selected nodes
+        const selected = selectedNodes.has(n.id) ? selectedNodes : new Set([n.id]);
+        const multiOffsets = new Map<string, { dx: number; dy: number }>();
+        for (const sid of selected) {
+          const sn = nodes.find(nn => nn.id === sid);
+          if (sn) multiOffsets.set(sid, { dx: world.x - sn.position.x, dy: world.y - sn.position.y });
+        }
+
+        setDrag({ type: 'node', nodeId: n.id, offsetX: world.x - n.position.x, offsetY: world.y - n.position.y, multiOffsets });
         return;
       }
     }
 
-    setSelectedNode(null);
-    setShowConfig(false);
-    setDrag({ type: 'pan', startX: e.clientX - pan.x, startY: e.clientY - pan.y });
-  };
+    // Box select (shift + empty area) or pan
+    if (e.shiftKey) {
+      setDrag({ type: 'box-select', boxStart: world, boxEnd: world });
+    } else {
+      setSelectedNodes(new Set());
+      setShowConfig(false);
+      setDrag({ type: 'pan', startX: e.clientX - pan.x, startY: e.clientY - pan.y });
+    }
+  }, [nodes, pan, screenToWorld, findPort, selectedNodes]);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
+    const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+
+    // Port hover detection
+    const port = findPort(world.x, world.y);
+    setHoveredPort(port);
 
     if (drag.type === 'node' && drag.nodeId) {
-      const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-      setNodes((prev) => prev.map((n) =>
-        n.id === drag.nodeId ? { ...n, position: { x: world.x - (drag.offsetX || 0), y: world.y - (drag.offsetY || 0) } } : n
-      ));
+      const selected = drag.multiOffsets || new Map([[drag.nodeId, { dx: drag.offsetX || 0, dy: drag.offsetY || 0 }]]);
+      setNodes((prev) => prev.map((n) => {
+        const off = selected.get(n.id);
+        if (!off) return n;
+        return { ...n, position: { x: snapToGrid(world.x - off.dx), y: snapToGrid(world.y - off.dy) } };
+      }));
     } else if (drag.type === 'pan') {
       setPan({ x: e.clientX - (drag.startX || 0), y: e.clientY - (drag.startY || 0) });
     } else if (drag.type === 'wire') {
-      setDrag(prev => ({ ...prev, wireEnd: { x: e.clientX - rect.left, y: e.clientY - rect.top } }));
+      // Check compatibility with hovered port
+      const targetPort = findPort(world.x, world.y, true);
+      let compatible: boolean | undefined = undefined;
+      if (targetPort && drag.wireFrom) {
+        compatible = targetPort.portType === drag.wireFrom.portType && targetPort.nodeId !== drag.wireFrom.nodeId;
+      }
+      setDrag(prev => ({ ...prev, wireEnd: { x: e.clientX - rect.left, y: e.clientY - rect.top }, wireCompatible: compatible }));
+    } else if (drag.type === 'box-select') {
+      setDrag(prev => ({ ...prev, boxEnd: world }));
     }
-  };
+  }, [drag, screenToWorld, findPort]);
 
-  const handleMouseUp = (e: React.MouseEvent) => {
+  const handleMouseUp = useCallback((e: React.MouseEvent) => {
     if (drag.type === 'wire' && drag.wireFrom) {
       const rect = canvasRef.current?.getBoundingClientRect();
       if (rect) {
@@ -381,30 +776,60 @@ export const FlowEditor: React.FC = () => {
         const targetPort = findPort(world.x, world.y, true);
 
         if (targetPort && targetPort.nodeId !== drag.wireFrom.nodeId) {
-          // Validate compatibility
-          if (arePortsCompatible(drag.wireFrom.portType, targetPort.portType)) {
+          if (targetPort.portType === drag.wireFrom.portType) {
             const newConn: FlowConnection = {
-              id: `c${Date.now()}`,
+              id: nextId('c'),
               sourceNode: drag.wireFrom.nodeId,
               sourcePort: drag.wireFrom.portId,
               targetNode: targetPort.nodeId,
               targetPort: targetPort.portId,
             };
-            setConnections(prev => [...prev, newConn]);
+            setConnections(prev => {
+              const next = [...prev, newConn];
+              pushHistory(nodes, next);
+              return next;
+            });
           }
         }
       }
+    } else if (drag.type === 'node') {
+      pushHistory(nodes, connections);
+    } else if (drag.type === 'box-select' && drag.boxStart && drag.boxEnd) {
+      const minX = Math.min(drag.boxStart.x, drag.boxEnd.x);
+      const minY = Math.min(drag.boxStart.y, drag.boxEnd.y);
+      const maxX = Math.max(drag.boxStart.x, drag.boxEnd.x);
+      const maxY = Math.max(drag.boxStart.y, drag.boxEnd.y);
+      const selected = new Set<string>();
+      for (const n of nodes) {
+        if (n.position.x + n.width > minX && n.position.x < maxX &&
+            n.position.y + n.height > minY && n.position.y < maxY) {
+          selected.add(n.id);
+        }
+      }
+      setSelectedNodes(selected);
     }
     setDrag({ type: null });
-  };
+  }, [drag, nodes, connections, screenToWorld, findPort, pushHistory]);
 
-  const handleWheel = (e: React.WheelEvent) => {
+  const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     const factor = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom((z) => Math.max(0.2, Math.min(3, z * factor)));
-  };
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    setZoom(z => {
+      const newZ = Math.max(0.2, Math.min(3, z * factor));
+      // Zoom toward cursor
+      setPan(p => ({
+        x: mx - (mx - p.x) * (newZ / z),
+        y: my - (my - p.y) * (newZ / z),
+      }));
+      return newZ;
+    });
+  }, []);
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const data = e.dataTransfer.getData('application/signalforge-node');
     if (!data) return;
@@ -415,9 +840,9 @@ export const FlowEditor: React.FC = () => {
 
     const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
     const newNode: EditorNode = {
-      id: `n${Date.now()}`,
+      id: nextId('n'),
       type: item.type,
-      position: { x: world.x - 70, y: world.y - 35 },
+      position: { x: snapToGrid(world.x - 75), y: snapToGrid(world.y - 35) },
       params: {},
       name: item.name,
       icon: item.icon,
@@ -426,45 +851,108 @@ export const FlowEditor: React.FC = () => {
       width: 150,
       height: 70,
     };
-    setNodes((prev) => [...prev, newNode]);
-  };
+    setNodes(prev => {
+      const next = [...prev, newNode];
+      pushHistory(next, connections);
+      return next;
+    });
+  }, [screenToWorld, connections, pushHistory]);
 
-  // Save/load
-  const saveFlowgraph = () => {
-    const data = JSON.stringify({ nodes, connections }, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'flowgraph.json'; a.click();
-    URL.revokeObjectURL(url);
-  };
+  // Context menu
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const n = nodes[i];
+      if (world.x >= n.position.x && world.x <= n.position.x + n.width &&
+          world.y >= n.position.y && world.y <= n.position.y + n.height) {
+        setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, nodeId: n.id });
+        setSelectedNodes(new Set([n.id]));
+        return;
+      }
+    }
+    setContextMenu(null);
+  }, [nodes, screenToWorld]);
 
-  const loadFlowgraph = () => {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = '.json';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const text = await file.text();
-      const data = JSON.parse(text);
-      if (data.nodes) setNodes(data.nodes);
-      if (data.connections) setConnections(data.connections);
-    };
-    input.click();
-  };
-
-  const deleteNode = (nodeId: string) => {
-    setNodes(prev => prev.filter(n => n.id !== nodeId));
-    setConnections(prev => prev.filter(c => c.sourceNode !== nodeId && c.targetNode !== nodeId));
-    setSelectedNode(null);
+  // Node operations
+  const deleteNodes = useCallback((nodeIds: Set<string>) => {
+    setNodes(prev => {
+      const next = prev.filter(n => !nodeIds.has(n.id));
+      setConnections(prevC => {
+        const nextC = prevC.filter(c => !nodeIds.has(c.sourceNode) && !nodeIds.has(c.targetNode));
+        pushHistory(next, nextC);
+        return nextC;
+      });
+      return next;
+    });
+    setSelectedNodes(new Set());
     setShowConfig(false);
-  };
+  }, [pushHistory]);
 
-  const selectedNodeData = nodes.find(n => n.id === selectedNode);
-  const nodeParams = selectedNodeData ? NODE_PARAMS[selectedNodeData.type] : null;
+  const duplicateNode = useCallback((nodeId: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    const newNode: EditorNode = {
+      ...JSON.parse(JSON.stringify(node)),
+      id: nextId('n'),
+      position: { x: node.position.x + 40, y: node.position.y + 40 },
+    };
+    setNodes(prev => {
+      const next = [...prev, newNode];
+      pushHistory(next, connections);
+      return next;
+    });
+    setSelectedNodes(new Set([newNode.id]));
+  }, [nodes, connections, pushHistory]);
+
+  const disconnectAll = useCallback((nodeId: string) => {
+    setConnections(prev => {
+      const next = prev.filter(c => c.sourceNode !== nodeId && c.targetNode !== nodeId);
+      pushHistory(nodes, next);
+      return next;
+    });
+  }, [nodes, pushHistory]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't handle if typing in input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedNodes.size > 0) {
+          e.preventDefault();
+          deleteNodes(selectedNodes);
+        }
+      } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if ((e.key === 'y' && (e.ctrlKey || e.metaKey)) || (e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey)) {
+        e.preventDefault();
+        redo();
+      } else if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setSelectedNodes(new Set(nodes.map(n => n.id)));
+      } else if (e.key === 'Escape') {
+        setSelectedNodes(new Set());
+        setShowConfig(false);
+        setContextMenu(null);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedNodes, nodes, deleteNodes, undo, redo]);
+
+  const nodeParams = selectedNode ? NODE_PARAMS[selectedNode.type] : null;
+
+  // ============================================================================
+  // Render
+  // ============================================================================
 
   return (
-    <div className="h-full w-full relative">
+    <div ref={containerRef} className="h-full w-full relative" tabIndex={0}>
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full cursor-crosshair"
@@ -475,41 +963,122 @@ export const FlowEditor: React.FC = () => {
         onWheel={handleWheel}
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
+        onContextMenu={handleContextMenu}
       />
 
-      {/* Toolbar */}
-      <div className="absolute top-3 right-3 flex gap-2 z-10">
-        <button onClick={saveFlowgraph} className="bg-forge-bg/90 border border-forge-border px-3 py-1.5 rounded text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan hover:border-forge-cyan/30 transition-all">
+      {/* ── Toolbar ── */}
+      <div className="absolute top-3 right-3 flex gap-1.5 z-10 flex-wrap">
+        {/* New */}
+        <button onClick={newFlow} className="bg-forge-bg/90 border border-forge-border px-2.5 py-1.5 rounded text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan hover:border-forge-cyan/30 transition-all">
+          ✨ New
+        </button>
+
+        {/* Save */}
+        <button onClick={saveFlow} className="bg-forge-bg/90 border border-forge-border px-2.5 py-1.5 rounded text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan hover:border-forge-cyan/30 transition-all">
           💾 Save
         </button>
-        <button onClick={loadFlowgraph} className="bg-forge-bg/90 border border-forge-border px-3 py-1.5 rounded text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan hover:border-forge-cyan/30 transition-all">
-          📂 Load
-        </button>
-        <span className="bg-forge-bg/80 px-3 py-1.5 rounded border border-forge-border text-[10px] font-mono text-forge-text-dim">
-          {nodes.length} nodes · {connections.length} connections · {Math.round(zoom * 100)}%
+
+        {/* Load */}
+        <div className="relative">
+          <button onClick={() => { setShowLoadDropdown(!showLoadDropdown); setShowTemplateDropdown(false); }} className="bg-forge-bg/90 border border-forge-border px-2.5 py-1.5 rounded text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan hover:border-forge-cyan/30 transition-all">
+            📂 Load ▾
+          </button>
+          {showLoadDropdown && (
+            <div className="absolute top-full right-0 mt-1 w-56 bg-forge-bg border border-forge-border rounded-lg shadow-xl overflow-hidden">
+              {savedFlows.length === 0 ? (
+                <div className="px-3 py-2 text-[10px] font-mono text-forge-text-dim">No saved flows</div>
+              ) : savedFlows.map(f => (
+                <button key={f.id} onClick={() => loadFlow(f)} className="w-full text-left px-3 py-2 text-[10px] font-mono text-forge-text-dim hover:bg-forge-cyan/10 hover:text-forge-cyan transition-all">
+                  {f.name} <span className="text-[8px] opacity-50">· {new Date(f.savedAt).toLocaleDateString()}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Templates */}
+        <div className="relative">
+          <button onClick={() => { setShowTemplateDropdown(!showTemplateDropdown); setShowLoadDropdown(false); }} className="bg-forge-bg/90 border border-forge-border px-2.5 py-1.5 rounded text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan hover:border-forge-cyan/30 transition-all">
+            📋 Templates ▾
+          </button>
+          {showTemplateDropdown && (
+            <div className="absolute top-full right-0 mt-1 w-56 bg-forge-bg border border-forge-border rounded-lg shadow-xl overflow-hidden">
+              {Object.entries(FLOW_TEMPLATES).map(([key, tpl]) => (
+                <button key={key} onClick={() => loadTemplate(key)} className="w-full text-left px-3 py-2 text-[10px] font-mono text-forge-text-dim hover:bg-forge-cyan/10 hover:text-forge-cyan transition-all">
+                  {tpl.icon} {tpl.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Zoom controls */}
+        <div className="flex items-center gap-0.5">
+          <button onClick={() => setZoom(z => Math.max(0.2, z * 0.8))} className="bg-forge-bg/90 border border-forge-border px-2 py-1.5 rounded-l text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan transition-all">−</button>
+          <span className="bg-forge-bg/80 border-y border-forge-border px-2 py-1.5 text-[10px] font-mono text-forge-text-dim">{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom(z => Math.min(3, z * 1.25))} className="bg-forge-bg/90 border border-forge-border px-2 py-1.5 rounded-r text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan transition-all">+</button>
+        </div>
+
+        {/* Status */}
+        <span className="bg-forge-bg/80 px-2.5 py-1.5 rounded border border-forge-border text-[10px] font-mono text-forge-text-dim">
+          {nodes.length}n · {connections.length}c
         </span>
       </div>
 
-      {/* Node config panel */}
-      {showConfig && selectedNodeData && (
-        <div className="absolute top-3 left-3 w-56 panel-border rounded-lg p-3 z-10 space-y-2">
+      {/* Flow name */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
+        <input
+          value={flowName}
+          onChange={e => setFlowName(e.target.value)}
+          className="bg-transparent text-center text-xs font-mono text-forge-text-dim border-b border-transparent hover:border-forge-border focus:border-forge-cyan focus:text-forge-text outline-none px-4 py-1 transition-all"
+        />
+      </div>
+
+      {/* ── Context Menu ── */}
+      {contextMenu && (
+        <div
+          className="absolute z-20 bg-forge-bg border border-forge-border rounded-lg shadow-xl overflow-hidden"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          {[
+            { label: '📋 Duplicate', action: () => duplicateNode(contextMenu.nodeId) },
+            { label: '🗑 Delete', action: () => deleteNodes(new Set([contextMenu.nodeId])) },
+            { label: '🔌 Disconnect All', action: () => disconnectAll(contextMenu.nodeId) },
+          ].map(item => (
+            <button
+              key={item.label}
+              onClick={() => { item.action(); setContextMenu(null); }}
+              className="w-full text-left px-4 py-2 text-[10px] font-mono text-forge-text-dim hover:bg-forge-cyan/10 hover:text-forge-cyan transition-all"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Node config panel ── */}
+      {showConfig && selectedNode && (
+        <div className="absolute top-3 left-3 w-56 panel-border rounded-lg p-3 z-10 space-y-2 bg-forge-bg/95 backdrop-blur">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-mono text-forge-cyan flex items-center gap-2">
-              <span>{selectedNodeData.icon}</span>
-              {selectedNodeData.name}
+              <span>{selectedNode.icon}</span>
+              {selectedNode.name}
             </h3>
             <button onClick={() => setShowConfig(false)} className="text-forge-text-dim hover:text-forge-text text-xs">✕</button>
           </div>
 
-          <div className="text-[9px] font-mono text-forge-text-dim">{selectedNodeData.type} · {selectedNodeData.category}</div>
+          <div className="text-[9px] font-mono text-forge-text-dim">{selectedNode.type} · {selectedNode.category}</div>
 
           {nodeParams && nodeParams.map(param => (
             <div key={param.id}>
               <label className="text-[10px] font-mono text-forge-text-dim">{param.label}</label>
               {param.type === 'select' ? (
                 <select
-                  value={String(selectedNodeData.params[param.id] ?? param.default)}
-                  onChange={(e) => setNodes(prev => prev.map(n => n.id === selectedNode ? { ...n, params: { ...n.params, [param.id]: e.target.value } } : n))}
+                  value={String(selectedNode.params[param.id] ?? param.default)}
+                  onChange={(e) => {
+                    const nodeId = selectedNode.id;
+                    setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, params: { ...n.params, [param.id]: e.target.value } } : n));
+                  }}
                   className="w-full bg-forge-bg border border-forge-border rounded px-2 py-1 text-[10px] text-forge-text mt-0.5"
                 >
                   {param.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -517,8 +1086,11 @@ export const FlowEditor: React.FC = () => {
               ) : (
                 <input
                   type={param.type === 'number' ? 'number' : 'text'}
-                  value={String(selectedNodeData.params[param.id] ?? param.default ?? '')}
-                  onChange={(e) => setNodes(prev => prev.map(n => n.id === selectedNode ? { ...n, params: { ...n.params, [param.id]: param.type === 'number' ? parseFloat(e.target.value) : e.target.value } } : n))}
+                  value={String(selectedNode.params[param.id] ?? param.default ?? '')}
+                  onChange={(e) => {
+                    const nodeId = selectedNode.id;
+                    setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, params: { ...n.params, [param.id]: param.type === 'number' ? parseFloat(e.target.value) : e.target.value } } : n));
+                  }}
                   className="w-full bg-forge-bg border border-forge-border rounded px-2 py-1 text-[10px] text-forge-text mt-0.5"
                 />
               )}
@@ -526,13 +1098,24 @@ export const FlowEditor: React.FC = () => {
           ))}
 
           <button
-            onClick={() => deleteNode(selectedNodeData.id)}
+            onClick={() => deleteNodes(new Set([selectedNode.id]))}
             className="w-full mt-2 py-1 rounded border border-forge-red/30 text-[10px] font-mono text-forge-red/70 hover:bg-forge-red/10 hover:text-forge-red transition-all"
           >
             🗑 Delete Node
           </button>
         </div>
       )}
+
+      {/* Keyboard shortcuts hint */}
+      <div className="absolute bottom-3 left-3 text-[8px] font-mono text-forge-text-dim/30 z-10 space-x-3">
+        <span>Del: delete</span>
+        <span>⌘Z: undo</span>
+        <span>⌘⇧Z: redo</span>
+        <span>⌘A: select all</span>
+        <span>Shift+click: multi-select</span>
+        <span>Shift+drag: box select</span>
+        <span>Right-click: context menu</span>
+      </div>
     </div>
   );
 };

@@ -55,6 +55,7 @@ import { HistoryService } from './history/service.js';
 import { IntegrationHubService } from './integrations/service.js';
 import { EquipmentService } from './equipment/service.js';
 import { AaroniaService } from './services/aaronia.js';
+import { WebSDRService } from './sdr/websdr.js';
 import type { DashboardStats, ActivityFeedItem, IntegrationType } from '@signalforge/shared';
 
 const PORT = parseInt(process.env.PORT || '3401');
@@ -146,6 +147,7 @@ const historyService = new HistoryService();
 const integrationHubService = new IntegrationHubService();
 const equipmentService = new EquipmentService();
 const aaroniaService = new AaroniaService();
+const webSDRService = new WebSDRService();
 
 const locationService = new LocationService();
 locationService.start();
@@ -1207,6 +1209,39 @@ app.get('/api/activity', (req, res) => {
   res.json(activityFeed.slice(0, limit));
 });
 
+// --- Flow Save/Load ---
+interface SavedFlow {
+  id: string;
+  name: string;
+  nodes: unknown[];
+  connections: unknown[];
+  savedAt: number;
+}
+const savedFlows: SavedFlow[] = [];
+
+app.get('/api/flows', (_req, res) => {
+  res.json(savedFlows.map(f => ({ id: f.id, name: f.name, savedAt: f.savedAt, nodeCount: f.nodes.length })));
+});
+
+app.post('/api/flows', (req, res) => {
+  const flow: SavedFlow = {
+    id: req.body.id || `f${Date.now()}`,
+    name: req.body.name || 'Untitled',
+    nodes: req.body.nodes || [],
+    connections: req.body.connections || [],
+    savedAt: Date.now(),
+  };
+  const idx = savedFlows.findIndex(f => f.id === flow.id);
+  if (idx >= 0) savedFlows[idx] = flow; else savedFlows.push(flow);
+  res.json({ ok: true, id: flow.id });
+});
+
+app.delete('/api/flows/:id', (req, res) => {
+  const idx = savedFlows.findIndex(f => f.id === req.params.id);
+  if (idx >= 0) savedFlows.splice(idx, 1);
+  res.json({ ok: true });
+});
+
 // --- Flowgraph presets ---
 app.get('/api/presets', (_req, res) => {
   res.json([
@@ -2142,6 +2177,48 @@ aaroniaService.on('sweep_complete', (result) => {
 aaroniaService.on('connected', (device) => {
   broadcast({ type: 'aaronia_connected', device });
 });
+
+// ============================================================================
+// REST API — WebSDR (real radio via KiwiSDR / WebSDR.org proxy)
+// ============================================================================
+app.get('/api/websdr/receivers', (_req, res) => res.json(webSDRService.listReceivers()));
+app.get('/api/websdr/status', (_req, res) => res.json(webSDRService.getStatus()));
+
+app.post('/api/websdr/connect', async (req, res) => {
+  const { url, frequency = 7074, mode = 'am' } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  try {
+    const ok = await webSDRService.connect(url, frequency, mode);
+    res.json({ ok, status: webSDRService.getStatus() });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/websdr/tune', (req, res) => {
+  const { frequency, mode = 'am', lowCut, highCut } = req.body;
+  if (!frequency) return res.status(400).json({ error: 'frequency required' });
+  const ok = webSDRService.tune(frequency, mode, lowCut, highCut);
+  res.json({ ok, status: webSDRService.getStatus() });
+});
+
+app.post('/api/websdr/disconnect', (_req, res) => {
+  webSDRService.disconnect();
+  res.json({ ok: true });
+});
+
+// WebSDR audio → broadcast to WS clients as binary
+webSDRService.on('audio', (audioData: Buffer) => {
+  // Tag the binary so clients know it's WebSDR audio
+  const header = Buffer.from([0x57, 0x53, 0x44]); // 'WSD'
+  const tagged = Buffer.concat([header, audioData]);
+  broadcastBinary(tagged);
+});
+
+webSDRService.on('connected', (info) => broadcast({ type: 'websdr_connected', ...info }));
+webSDRService.on('disconnected', () => broadcast({ type: 'websdr_disconnected' }));
+webSDRService.on('tuned', (info) => broadcast({ type: 'websdr_tuned', ...info }));
+webSDRService.on('error', (info) => broadcast({ type: 'websdr_error', ...info }));
 
 // ============================================================================
 // REST API — Themes (serve theme list; actual theming is client-side)

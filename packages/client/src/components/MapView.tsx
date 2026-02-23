@@ -8,6 +8,28 @@ interface SatWithPos extends TLE {
 
 type MapLayer = 'satellites' | 'aircraft' | 'vessels' | 'aprs';
 
+// ── Tile cache for CartoDB dark matter tiles ──
+const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png';
+const TILE_SUBDOMAINS = ['a', 'b', 'c', 'd'];
+const tileCache = new Map<string, HTMLImageElement>();
+const tilePending = new Set<string>();
+
+function getTile(z: number, x: number, y: number): HTMLImageElement | null {
+  const key = `${z}/${x}/${y}`;
+  const cached = tileCache.get(key);
+  if (cached && cached.complete && cached.naturalWidth > 0) return cached;
+  if (tilePending.has(key)) return null;
+  tilePending.add(key);
+  const s = TILE_SUBDOMAINS[(x + y) % TILE_SUBDOMAINS.length];
+  const url = TILE_URL.replace('{s}', s).replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y));
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => { tileCache.set(key, img); tilePending.delete(key); };
+  img.onerror = () => { tilePending.delete(key); };
+  img.src = url;
+  return null;
+}
+
 export const MapView: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
@@ -112,20 +134,37 @@ export const MapView: React.FC = () => {
     const pmX = lonLatToScreen(0, 0, w, h).x;
     ctx.beginPath(); ctx.moveTo(pmX, 0); ctx.lineTo(pmX, h); ctx.stroke();
 
-    // Simplified continent outlines
-    ctx.fillStyle = 'rgba(0, 229, 255, 0.02)';
-    ctx.strokeStyle = 'rgba(0, 229, 255, 0.1)';
-    ctx.lineWidth = 0.8;
-    const continents = [
-      [-130, 25, -60, 50], [-80, -55, -35, 10], [-10, 35, 40, 70],
-      [-20, -35, 50, 35], [60, 5, 140, 55], [110, -45, 155, -10],
-      [-170, 55, -130, 70], [20, 60, 180, 75],
-    ];
-    for (const [lonMin, latMin, lonMax, latMax] of continents) {
-      const tl = lonLatToScreen(lonMin, latMax, w, h);
-      const br = lonLatToScreen(lonMax, latMin, w, h);
-      ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
-      ctx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+    // ── Map tiles (CartoDB dark matter) ──
+    {
+      // Calculate appropriate zoom level from our zoom factor
+      const tileZoom = Math.max(0, Math.min(18, Math.floor(Math.log2(zoom * 2))));
+      const numTiles = Math.pow(2, tileZoom);
+      const tileSize = 256;
+
+      // Determine visible tile range
+      for (let tx = 0; tx < numTiles; tx++) {
+        for (let ty = 0; ty < numTiles; ty++) {
+          // Tile bounds in lon/lat
+          const tileLonMin = (tx / numTiles) * 360 - 180;
+          const tileLonMax = ((tx + 1) / numTiles) * 360 - 180;
+          // Mercator lat from tile y
+          const tileLatMax = Math.atan(Math.sinh(Math.PI * (1 - 2 * ty / numTiles))) * 180 / Math.PI;
+          const tileLatMin = Math.atan(Math.sinh(Math.PI * (1 - 2 * (ty + 1) / numTiles))) * 180 / Math.PI;
+
+          const tl = lonLatToScreen(tileLonMin, tileLatMax, w, h);
+          const br = lonLatToScreen(tileLonMax, tileLatMin, w, h);
+
+          // Skip tiles completely off screen
+          if (br.x < 0 || tl.x > w || br.y < 0 || tl.y > h) continue;
+
+          const tile = getTile(tileZoom, tx, ty);
+          if (tile) {
+            ctx.globalAlpha = 0.85;
+            ctx.drawImage(tile, tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
     }
 
     // Observer
