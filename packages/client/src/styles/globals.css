@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -158,9 +160,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* ============================================================================
    THEME: LCARS (Star Trek)
-   ============================================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&display=swap');
 
 .theme-lcars {
   font-family: 'Antonio', 'Helvetica Neue', sans-serif !important;
