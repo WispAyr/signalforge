@@ -89,7 +89,7 @@ export const StatusBar: React.FC = () => {
           </>
         )}
         {serverStatus && <span>Uptime: {Math.floor(serverStatus.uptime / 3600)}h{Math.floor((serverStatus.uptime % 3600) / 60)}m</span>}
-        <span>SignalForge v0.6.0</span>
+        <span>SignalForge v0.9.0</span>
         <span className="text-forge-cyan">{utc} UTC</span>
       </div>
     </footer>

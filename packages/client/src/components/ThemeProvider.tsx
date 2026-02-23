@@ -18,6 +18,12 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export const useTheme = () => useContext(ThemeContext);
 
+const THEME_CLASSES: Record<string, string> = {
+  lcars: 'theme-lcars',
+  classic: 'theme-light',
+  tactical: 'theme-tactical',
+};
+
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [themeId, setThemeId] = useState(() => localStorage.getItem('signalforge-theme') || 'default');
   const [customAccent, setCustomAccent] = useState<string | undefined>(() => localStorage.getItem('signalforge-accent') || undefined);
@@ -39,22 +45,15 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     root.style.setProperty('--forge-success', c.success);
     root.style.setProperty('--forge-text', c.text);
     root.style.setProperty('--forge-text-dim', c.textDim);
+    root.style.setProperty('--forge-grid-overlay', c.gridOverlay);
 
-    // Apply to body for non-tailwind elements
     document.body.style.backgroundColor = c.bg;
     document.body.style.color = c.text;
 
-    // LCARS specific
-    if (t.id === 'lcars') {
-      document.body.classList.add('theme-lcars');
-    } else {
-      document.body.classList.remove('theme-lcars');
-    }
-
-    if (t.id === 'classic') {
-      document.body.classList.add('theme-light');
-    } else {
-      document.body.classList.remove('theme-light');
+    // Remove all theme classes, then add the right one
+    Object.values(THEME_CLASSES).forEach(cls => document.body.classList.remove(cls));
+    if (THEME_CLASSES[t.id]) {
+      document.body.classList.add(THEME_CLASSES[t.id]);
     }
   }, []);
 
