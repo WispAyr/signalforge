@@ -75,7 +75,7 @@ export const GlobeView: React.FC = () => {
     // Observer
     points.push({
       lat: observer.lat, lng: observer.lon, alt: 0.01,
-      color: '#ffd700', size: 1.2, label: 'YOU — Observer',
+      color: '#ffd700', size: 0.5, label: '📍 Observer',
       type: 'observer', id: 'observer',
     });
 
@@ -280,7 +280,7 @@ export const GlobeView: React.FC = () => {
       globe.pointRadius((d: object) => {
         const p = d as GlobePoint;
         if (p.type === 'satellite') return 0.3 + Math.sin(t * 3 + p.lat) * 0.15;
-        if (p.type === 'observer') return 1.0 + Math.sin(t * 2) * 0.3;
+        if (p.type === 'observer') return 0.5 + Math.sin(t * 2) * 0.1;
         if (p.type === 'edge-node') return 0.7 + Math.sin(t * 2.5) * 0.2;
         return p.size;
       });
