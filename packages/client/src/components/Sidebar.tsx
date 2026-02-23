@@ -33,6 +33,13 @@ const NODE_PALETTE: NodePaletteItem[] = [
   { type: 'apt_decoder', name: 'NOAA APT', category: 'decoder', icon: '🌦️', color: '#aa00ff' },
   { type: 'lrpt_decoder', name: 'METEOR LRPT', category: 'decoder', icon: '🛰️', color: '#aa00ff' },
   { type: 'lora_decoder', name: 'LoRa', category: 'decoder', icon: '📶', color: '#aa00ff' },
+  { type: 'ism433_source', name: 'ISM 433 Source', category: 'source', icon: '📡', color: '#00e5ff' },
+  { type: 'hackrf_source', name: 'HackRF Source', category: 'source', icon: '📶', color: '#00e5ff' },
+  { type: 'meshtastic_source', name: 'Meshtastic', category: 'source', icon: '📡', color: '#00e5ff' },
+  { type: 'vdl2_decoder', name: 'VDL2', category: 'decoder', icon: '✈️', color: '#aa00ff' },
+  { type: 'sstv_decoder', name: 'SSTV', category: 'decoder', icon: '📺', color: '#aa00ff' },
+  { type: 'pager_decoder', name: 'POCSAG/FLEX', category: 'decoder', icon: '📟', color: '#aa00ff' },
+  { type: 'meter_reader', name: 'Meter Reader', category: 'decoder', icon: '🔌', color: '#aa00ff' },
   // Analysis
   { type: 'fft', name: 'FFT', category: 'analysis', icon: '📊', color: '#ff1744' },
   { type: 'waterfall', name: 'Waterfall', category: 'analysis', icon: '≋', color: '#ff1744' },

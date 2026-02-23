@@ -225,6 +225,9 @@ Open geocoding service used for the place-name search in the observer location s
 ### [WebSDR](http://websdr.org)
 Pieter-Tjerk de Boer's network of publicly accessible software-defined radio receivers. The WebSDR integration lets users explore radio worldwide without owning hardware.
 
+### [INTERCEPT](https://github.com/smittix/intercept) by smittix
+A Python-based SIGINT platform that inspired Phase 7's feature absorption — rtl_433 IoT decoding, POCSAG/FLEX pager decoding, sub-GHz analysis, SSTV decoding, WiFi/Bluetooth scanning, TSCM counter-surveillance, Meshtastic integration, number stations database, and field/offline mode. INTERCEPT demonstrated the breadth of capabilities a modern SIGINT platform should cover.
+
 ### Key Libraries
 - **[satellite.js](https://github.com/shashwatak/satellite-js)** — SGP4/SDP4 satellite propagation in JavaScript
 - **[React](https://react.dev)** — UI framework

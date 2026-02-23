@@ -1,6 +1,6 @@
 {
   "name": "@signalforge/edge-node",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "description": "SignalForge Edge Node — lightweight SDR agent for Raspberry Pi and remote machines",
   "main": "dist/index.js",
   "type": "module",

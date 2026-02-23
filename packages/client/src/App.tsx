@@ -28,8 +28,31 @@ import { LogbookView } from './components/LogbookView';
 import { AnalyticsView } from './components/AnalyticsView';
 import { DXClusterView } from './components/DXClusterView';
 import { AudioStreamView } from './components/AudioStreamView';
+// Phase 7
+import { RTL433View } from './components/RTL433View';
+import { PagerView } from './components/PagerView';
+import { SubGHzView } from './components/SubGHzView';
+import { SSTVView } from './components/SSTVView';
+import { MeterView } from './components/MeterView';
+import { WiFiView } from './components/WiFiView';
+import { BluetoothView } from './components/BluetoothView';
+import { TSCMView } from './components/TSCMView';
+import { MeshtasticView } from './components/MeshtasticView';
+import { NumberStationsView } from './components/NumberStationsView';
+import { FieldModeView } from './components/FieldModeView';
+import { VDL2View } from './components/VDL2View';
+// Phase 8
+import { GlobeView } from './components/GlobeView';
+import { WebGPUDSPView } from './components/WebGPUDSPView';
+import { NarratorView } from './components/NarratorView';
+import { CommunityView } from './components/CommunityView';
+import { AcademyView } from './components/AcademyView';
+import { HistoryView } from './components/HistoryView';
+import { IntegrationsView } from './components/IntegrationsView';
+import { EquipmentView } from './components/EquipmentView';
+import { CinematicView } from './components/CinematicView';
 
-export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'sdr' | 'analyzer' | 'scheduler' | 'signals' | 'settings' | 'scanner' | 'timeline' | 'telemetry' | 'plugins' | 'edge' | 'satnogs' | 'geofence' | 'voice' | 'propagation' | 'logbook' | 'analytics' | 'dxcluster' | 'audio';
+export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'sdr' | 'analyzer' | 'scheduler' | 'signals' | 'settings' | 'scanner' | 'timeline' | 'telemetry' | 'plugins' | 'edge' | 'satnogs' | 'geofence' | 'voice' | 'propagation' | 'logbook' | 'analytics' | 'dxcluster' | 'audio' | 'rtl433' | 'pager' | 'subghz' | 'sstv' | 'meters' | 'wifi' | 'bluetooth' | 'tscm' | 'meshtastic' | 'numberstations' | 'fieldmode' | 'vdl2' | 'globe' | 'dsp' | 'narrator' | 'community' | 'academy' | 'history' | 'integrations' | 'equipment' | 'cinematic';
 
 export const App: React.FC = () => {
   const [activeView, setActiveView] = useState<View>('dashboard');
@@ -98,6 +121,27 @@ export const App: React.FC = () => {
               {activeView === 'analytics' && <AnalyticsView />}
               {activeView === 'dxcluster' && <DXClusterView />}
               {activeView === 'audio' && <AudioStreamView />}
+              {activeView === 'rtl433' && <RTL433View />}
+              {activeView === 'pager' && <PagerView />}
+              {activeView === 'subghz' && <SubGHzView />}
+              {activeView === 'sstv' && <SSTVView />}
+              {activeView === 'meters' && <MeterView />}
+              {activeView === 'wifi' && <WiFiView />}
+              {activeView === 'bluetooth' && <BluetoothView />}
+              {activeView === 'tscm' && <TSCMView />}
+              {activeView === 'meshtastic' && <MeshtasticView />}
+              {activeView === 'numberstations' && <NumberStationsView />}
+              {activeView === 'fieldmode' && <FieldModeView />}
+              {activeView === 'vdl2' && <VDL2View />}
+              {activeView === 'globe' && <GlobeView />}
+              {activeView === 'dsp' && <WebGPUDSPView />}
+              {activeView === 'narrator' && <NarratorView />}
+              {activeView === 'community' && <CommunityView />}
+              {activeView === 'academy' && <AcademyView />}
+              {activeView === 'history' && <HistoryView />}
+              {activeView === 'integrations' && <IntegrationsView />}
+              {activeView === 'equipment' && <EquipmentView />}
+              {activeView === 'cinematic' && <CinematicView />}
               {activeView === 'settings' && <SettingsPage />}
             </ErrorBoundary>
           </main>

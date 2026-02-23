@@ -34,7 +34,27 @@ import { LogbookService } from './logbook/service.js';
 import { AnalyticsService } from './analytics/service.js';
 import { DXClusterService } from './dxcluster/service.js';
 import { AudioStreamingService } from './audio/streaming.js';
-import type { DashboardStats, ActivityFeedItem } from '@signalforge/shared';
+// Phase 7 imports
+import { RTL433Service } from './rtl433/service.js';
+import { PagerService } from './pager/service.js';
+import { SubGHzService } from './subghz/service.js';
+import { SSTVService } from './sstv/service.js';
+import { MeterService } from './meters/service.js';
+import { WiFiService } from './wifi/service.js';
+import { BluetoothService } from './bluetooth/service.js';
+import { TSCMService } from './tscm/service.js';
+import { MeshtasticService } from './meshtastic/service.js';
+import { NumberStationsService } from './numberstations/service.js';
+import { FieldModeService } from './fieldmode/service.js';
+import { VDL2Service } from './vdl2/service.js';
+// Phase 8 imports
+import { NarratorService } from './narrator/service.js';
+import { CommunityService } from './community/service.js';
+import { AcademyService } from './academy/service.js';
+import { HistoryService } from './history/service.js';
+import { IntegrationHubService } from './integrations/service.js';
+import { EquipmentService } from './equipment/service.js';
+import type { DashboardStats, ActivityFeedItem, IntegrationType } from '@signalforge/shared';
 
 const PORT = parseInt(process.env.PORT || '3401');
 const app = express();
@@ -104,6 +124,27 @@ const analyticsService = new AnalyticsService();
 const dxClusterService = new DXClusterService();
 const audioStreamingService = new AudioStreamingService();
 
+// Phase 7 services
+const rtl433Service = new RTL433Service();
+const pagerService = new PagerService();
+const subghzService = new SubGHzService();
+const sstvService = new SSTVService();
+const meterService = new MeterService();
+const wifiService = new WiFiService();
+const bluetoothService = new BluetoothService();
+const tscmService = new TSCMService();
+const meshtasticService = new MeshtasticService();
+const numberStationsService = new NumberStationsService();
+const fieldModeService = new FieldModeService();
+const vdl2Service = new VDL2Service();
+// Phase 8
+const narratorService = new NarratorService();
+const communityService = new CommunityService();
+const academyService = new AcademyService();
+const historyService = new HistoryService();
+const integrationHubService = new IntegrationHubService();
+const equipmentService = new EquipmentService();
+
 const locationService = new LocationService();
 locationService.start();
 
@@ -114,6 +155,18 @@ telemetryService.startDemoTelemetry();
 geofenceService.start();
 propagationService.start();
 voiceDecoder.startDemo();
+
+// Start Phase 7 demo services
+rtl433Service.startDemo();
+pagerService.startDemo();
+subghzService.startDemo();
+sstvService.startDemo();
+meterService.startDemo();
+wifiService.startDemo();
+bluetoothService.startDemo();
+tscmService.startDemo();
+meshtasticService.startDemo();
+vdl2Service.startDemo();
 
 // Session cleanup interval
 setInterval(() => sessionManager.cleanup(), 60000);
@@ -207,6 +260,67 @@ audioStreamingService.on('stream_created', (stream) => {
 });
 audioStreamingService.on('stream_stopped', () => {
   broadcast({ type: 'audio_streams', streams: audioStreamingService.getActiveStreams() });
+});
+
+// Phase 7 event wiring
+rtl433Service.on('device_update', (device) => {
+  broadcast({ type: 'ism_device', device });
+  analyticsService.recordDecoderMessage('ISM-433');
+});
+
+pagerService.on('message', (message) => {
+  broadcast({ type: 'pager_message', message });
+  analyticsService.recordDecoderMessage(message.protocol);
+});
+pagerService.on('alert', (alert) => {
+  broadcast({ type: 'pager_alert', alert });
+  timelineService.addEvent({ type: 'alert', title: `PAGER: ${alert.filterName}`, description: alert.message.content.slice(0, 80), timestamp: Date.now(), icon: '📟', color: '#ff6b6b' });
+});
+
+subghzService.on('signal', (signal) => {
+  broadcast({ type: 'subghz_signal', signal });
+  if (signal.isReplay) {
+    timelineService.addEvent({ type: 'alert', title: `REPLAY DETECTED: ${(signal.frequency / 1e6).toFixed(3)} MHz`, description: `${signal.protocol || 'Unknown'} — ${signal.replayCount} replays`, timestamp: Date.now(), icon: '⚠️', color: '#ff5252' });
+  }
+});
+subghzService.on('sweep', (sweep) => broadcast({ type: 'subghz_sweep', sweep }));
+
+sstvService.on('image', (image) => {
+  broadcast({ type: 'sstv_image', image });
+  timelineService.addEvent({ type: 'system', title: `SSTV: ${image.mode} decoded`, description: `${image.source} — ${image.width}×${image.height}`, timestamp: Date.now(), icon: '📺', color: '#e040fb' });
+});
+
+meterService.on('reading', ({ meter, reading }) => {
+  broadcast({ type: 'meter_reading', meter, reading });
+});
+
+wifiService.on('deauth', (evt) => {
+  broadcast({ type: 'wifi_deauth', event: evt });
+  timelineService.addEvent({ type: 'alert', title: `DEAUTH: ${evt.bssid}`, description: `${evt.sourceMac} → ${evt.targetMac} (${evt.count}×)`, timestamp: Date.now(), icon: '⚠️', color: '#ff9100' });
+});
+
+bluetoothService.on('proximity_alert', (alert) => {
+  broadcast({ type: 'bt_alert', alert });
+  timelineService.addEvent({ type: 'alert', title: `BT TRACKER: ${alert.deviceName}`, description: `${alert.trackerType} — RSSI: ${alert.rssi.toFixed(0)} dBm`, timestamp: Date.now(), icon: '🔵', color: '#448aff' });
+});
+
+tscmService.on('sweep_complete', (result) => {
+  broadcast({ type: 'tscm_sweep', result });
+  if (result.overallThreat !== 'clear') {
+    timelineService.addEvent({ type: 'alert', title: `TSCM: ${result.overallThreat.toUpperCase()}`, description: `${result.anomalies.length} anomalies in ${result.location}`, timestamp: Date.now(), icon: '🛡️', color: '#ff5252' });
+  }
+});
+
+meshtasticService.on('message', (message) => {
+  broadcast({ type: 'mesh_message', message });
+});
+meshtasticService.on('nodes_update', (nodes) => {
+  broadcast({ type: 'mesh_nodes', nodes });
+});
+
+vdl2Service.on('message', (message) => {
+  broadcast({ type: 'vdl2_message', message });
+  analyticsService.recordDecoderMessage('VDL2');
 });
 
 // Feed decoder data into analytics
@@ -454,13 +568,22 @@ app.get('/api/health', (_req, res) => {
     { name: 'Geofence', status: 'up' as const, lastCheck: Date.now(), details: { zones: geofenceService.getZones().length } },
     { name: 'Voice Decoder', status: 'up' as const, lastCheck: Date.now() },
     { name: 'Logbook', status: 'up' as const, lastCheck: Date.now() },
+    { name: 'RTL-433', status: (rtl433Service.getStatus().connected ? 'up' : 'down') as 'up' | 'down', lastCheck: Date.now(), details: { devices: rtl433Service.getDevices().length } },
+    { name: 'Pager', status: (pagerService.getConfig().enabled ? 'up' : 'down') as 'up' | 'down', lastCheck: Date.now() },
+    { name: 'Sub-GHz', status: (subghzService.getStatus().connected ? 'up' : 'down') as 'up' | 'down', lastCheck: Date.now() },
+    { name: 'SSTV', status: (sstvService.getStatus().active ? 'up' : 'down') as 'up' | 'down', lastCheck: Date.now() },
+    { name: 'WiFi', status: (wifiService.getStatus().scanning ? 'up' : 'down') as 'up' | 'down', lastCheck: Date.now() },
+    { name: 'Bluetooth', status: (bluetoothService.getStatus().scanning ? 'up' : 'down') as 'up' | 'down', lastCheck: Date.now() },
+    { name: 'TSCM', status: 'up' as const, lastCheck: Date.now() },
+    { name: 'Meshtastic', status: (meshtasticService.getStatus().connected ? 'up' : 'down') as 'up' | 'down', lastCheck: Date.now() },
+    { name: 'VDL2', status: (vdl2Service.getStatus().connected ? 'up' : 'down') as 'up' | 'down', lastCheck: Date.now() },
   ];
   const allUp = components.every(c => c.status === 'up');
   const anyDown = components.some(c => c.status === 'down');
   res.json({
     status: anyDown ? 'degraded' : allUp ? 'healthy' : 'degraded',
     name: 'SignalForge',
-    version: '0.6.0',
+    version: '0.7.0',
     uptime: process.uptime(),
     timestamp: Date.now(),
     components,
@@ -1709,6 +1832,265 @@ app.post('/api/audio/rooms/:id/leave', (req, res) => {
 });
 
 // ============================================================================
+// REST API — Phase 7: rtl_433 IoT
+// ============================================================================
+app.get('/api/rtl433/devices', (_req, res) => res.json(rtl433Service.getDevices()));
+app.get('/api/rtl433/devices/:id', (req, res) => {
+  const dev = rtl433Service.getDevice(req.params.id);
+  if (!dev) return res.status(404).json({ error: 'Device not found' });
+  res.json(dev);
+});
+app.get('/api/rtl433/status', (_req, res) => res.json(rtl433Service.getStatus()));
+app.get('/api/rtl433/config', (_req, res) => res.json(rtl433Service.getConfig()));
+app.post('/api/rtl433/config', (req, res) => res.json(rtl433Service.updateConfig(req.body)));
+
+// ============================================================================
+// REST API — Phase 7: Pager
+// ============================================================================
+app.get('/api/pager/messages', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 100;
+  const protocol = req.query.protocol as string | undefined;
+  res.json(pagerService.getMessages(limit, protocol as any));
+});
+app.get('/api/pager/stats', (_req, res) => res.json(pagerService.getStats()));
+app.get('/api/pager/filters', (_req, res) => res.json(pagerService.getFilters()));
+app.post('/api/pager/filters', (req, res) => res.json(pagerService.addFilter(req.body)));
+app.delete('/api/pager/filters/:id', (req, res) => { pagerService.removeFilter(req.params.id); res.json({ ok: true }); });
+app.get('/api/pager/alerts', (req, res) => res.json(pagerService.getAlerts(parseInt(req.query.limit as string) || 100)));
+app.post('/api/pager/alerts/:id/ack', (req, res) => res.json({ ok: pagerService.acknowledgeAlert(req.params.id) }));
+app.get('/api/pager/config', (_req, res) => res.json(pagerService.getConfig()));
+app.post('/api/pager/config', (req, res) => res.json(pagerService.updateConfig(req.body)));
+
+// ============================================================================
+// REST API — Phase 7: Sub-GHz
+// ============================================================================
+app.get('/api/subghz/signals', (req, res) => res.json(subghzService.getSignals(parseInt(req.query.limit as string) || 100)));
+app.get('/api/subghz/sweeps', (req, res) => res.json(subghzService.getSweepResults(parseInt(req.query.limit as string) || 50)));
+app.get('/api/subghz/identify', (req, res) => {
+  const freq = parseFloat(req.query.freq as string);
+  if (isNaN(freq)) return res.status(400).json({ error: 'freq required' });
+  res.json(subghzService.identifyProtocol(freq));
+});
+app.get('/api/subghz/status', (_req, res) => res.json(subghzService.getStatus()));
+app.get('/api/subghz/config', (_req, res) => res.json(subghzService.getConfig()));
+app.post('/api/subghz/config', (req, res) => res.json(subghzService.updateConfig(req.body)));
+
+// ============================================================================
+// REST API — Phase 7: SSTV
+// ============================================================================
+app.get('/api/sstv/gallery', (req, res) => res.json(sstvService.getGallery(parseInt(req.query.limit as string) || 50)));
+app.get('/api/sstv/gallery/:id', (req, res) => {
+  const img = sstvService.getImage(req.params.id);
+  if (!img) return res.status(404).json({ error: 'Image not found' });
+  res.json(img);
+});
+app.get('/api/sstv/status', (_req, res) => res.json(sstvService.getStatus()));
+app.get('/api/sstv/config', (_req, res) => res.json(sstvService.getConfig()));
+app.post('/api/sstv/config', (req, res) => res.json(sstvService.updateConfig(req.body)));
+app.post('/api/sstv/gallery/:id/notes', (req, res) => {
+  const img = sstvService.addNote(req.params.id, req.body.notes);
+  if (!img) return res.status(404).json({ error: 'Image not found' });
+  res.json(img);
+});
+
+// ============================================================================
+// REST API — Phase 7: Meters
+// ============================================================================
+app.get('/api/meters/devices', (_req, res) => res.json(meterService.getMeters()));
+app.get('/api/meters/devices/:id', (req, res) => {
+  const m = meterService.getMeter(req.params.id);
+  if (!m) return res.status(404).json({ error: 'Meter not found' });
+  res.json(m);
+});
+app.get('/api/meters/stats', (_req, res) => res.json(meterService.getStats()));
+app.get('/api/meters/config', (_req, res) => res.json(meterService.getConfig()));
+app.post('/api/meters/config', (req, res) => res.json(meterService.updateConfig(req.body)));
+
+// ============================================================================
+// REST API — Phase 7: WiFi
+// ============================================================================
+app.get('/api/wifi/aps', (_req, res) => res.json(wifiService.getAPs()));
+app.get('/api/wifi/aps/:bssid', (req, res) => {
+  const ap = wifiService.getAP(req.params.bssid);
+  if (!ap) return res.status(404).json({ error: 'AP not found' });
+  res.json(ap);
+});
+app.get('/api/wifi/deauth', (req, res) => res.json(wifiService.getDeauthEvents(parseInt(req.query.limit as string) || 100)));
+app.get('/api/wifi/channels', (_req, res) => res.json(wifiService.getChannelUtilization()));
+app.get('/api/wifi/status', (_req, res) => res.json(wifiService.getStatus()));
+app.get('/api/wifi/config', (_req, res) => res.json(wifiService.getConfig()));
+app.post('/api/wifi/config', (req, res) => res.json(wifiService.updateConfig(req.body)));
+
+// ============================================================================
+// REST API — Phase 7: Bluetooth
+// ============================================================================
+app.get('/api/bluetooth/devices', (_req, res) => res.json(bluetoothService.getDevices()));
+app.get('/api/bluetooth/devices/:id', (req, res) => {
+  const dev = bluetoothService.getDevice(req.params.id);
+  if (!dev) return res.status(404).json({ error: 'Device not found' });
+  res.json(dev);
+});
+app.get('/api/bluetooth/trackers', (_req, res) => res.json(bluetoothService.getTrackers()));
+app.get('/api/bluetooth/alerts', (req, res) => res.json(bluetoothService.getAlerts(parseInt(req.query.limit as string) || 100)));
+app.post('/api/bluetooth/alerts/:id/ack', (req, res) => res.json({ ok: bluetoothService.acknowledgeAlert(req.params.id) }));
+app.post('/api/bluetooth/target', (req, res) => { bluetoothService.setTarget(req.body.mac, req.body.isTarget); res.json({ ok: true }); });
+app.get('/api/bluetooth/status', (_req, res) => res.json(bluetoothService.getStatus()));
+app.get('/api/bluetooth/config', (_req, res) => res.json(bluetoothService.getConfig()));
+app.post('/api/bluetooth/config', (req, res) => res.json(bluetoothService.updateConfig(req.body)));
+
+// ============================================================================
+// REST API — Phase 7: TSCM
+// ============================================================================
+app.get('/api/tscm/baselines', (_req, res) => res.json(tscmService.getBaselines()));
+app.post('/api/tscm/baseline', (req, res) => res.json(tscmService.recordBaseline(req.body.name || 'Baseline', req.body.location || 'Unknown')));
+app.get('/api/tscm/sweeps', (req, res) => res.json(tscmService.getSweepResults(parseInt(req.query.limit as string) || 50)));
+app.post('/api/tscm/sweep', (req, res) => res.json(tscmService.runSweep(req.body.baselineId, req.body.location)));
+app.get('/api/tscm/anomalies', (req, res) => res.json(tscmService.getAnomalies(parseInt(req.query.limit as string) || 100)));
+app.post('/api/tscm/anomalies/:id/ack', (req, res) => res.json({ ok: tscmService.acknowledgeAnomaly(req.params.id) }));
+app.get('/api/tscm/knownbugs', (_req, res) => res.json(tscmService.getKnownBugs()));
+app.get('/api/tscm/reports', (_req, res) => res.json(tscmService.getReports()));
+app.post('/api/tscm/reports', (req, res) => {
+  const report = tscmService.generateReport(req.body.sweepId, req.body.operator);
+  if (!report) return res.status(404).json({ error: 'Sweep not found' });
+  res.json(report);
+});
+app.get('/api/tscm/config', (_req, res) => res.json(tscmService.getConfig()));
+app.post('/api/tscm/config', (req, res) => res.json(tscmService.updateConfig(req.body)));
+
+// ============================================================================
+// REST API — Phase 7: Meshtastic
+// ============================================================================
+app.get('/api/meshtastic/nodes', (_req, res) => res.json(meshtasticService.getNodes()));
+app.get('/api/meshtastic/nodes/:id', (req, res) => {
+  const node = meshtasticService.getNode(req.params.id);
+  if (!node) return res.status(404).json({ error: 'Node not found' });
+  res.json(node);
+});
+app.get('/api/meshtastic/messages', (req, res) => res.json(meshtasticService.getMessages(parseInt(req.query.limit as string) || 100)));
+app.post('/api/meshtastic/send', (req, res) => res.json(meshtasticService.sendMessage(req.body.text, req.body.to, req.body.channel)));
+app.get('/api/meshtastic/telemetry', (req, res) => res.json(meshtasticService.getTelemetry(req.query.nodeId as string, parseInt(req.query.limit as string) || 100)));
+app.get('/api/meshtastic/status', (_req, res) => res.json(meshtasticService.getStatus()));
+app.get('/api/meshtastic/config', (_req, res) => res.json(meshtasticService.getConfig()));
+app.post('/api/meshtastic/config', (req, res) => res.json(meshtasticService.updateConfig(req.body)));
+
+// ============================================================================
+// REST API — Phase 7: Number Stations
+// ============================================================================
+app.get('/api/numberstations', (req, res) => {
+  const q = req.query.q as string;
+  res.json(q ? numberStationsService.searchStations(q) : numberStationsService.getStations());
+});
+app.get('/api/numberstations/onair', (_req, res) => res.json(numberStationsService.getNowOnAir()));
+app.get('/api/numberstations/active', (_req, res) => res.json(numberStationsService.getActiveStations()));
+app.get('/api/numberstations/:id', (req, res) => {
+  const s = numberStationsService.getStation(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Station not found' });
+  res.json(s);
+});
+
+// ============================================================================
+// REST API — Phase 7: Field Mode
+// ============================================================================
+app.get('/api/fieldmode/status', (_req, res) => res.json(fieldModeService.getStatus()));
+app.post('/api/fieldmode/enable', (_req, res) => { fieldModeService.enable(); res.json({ ok: true }); });
+app.post('/api/fieldmode/disable', (_req, res) => { fieldModeService.disable(); res.json({ ok: true }); });
+app.get('/api/fieldmode/assets', (_req, res) => res.json(fieldModeService.getCachedAssets()));
+app.post('/api/fieldmode/refresh/:type', (req, res) => {
+  const asset = fieldModeService.refreshAsset(req.params.type);
+  if (!asset) return res.status(404).json({ error: 'Asset not found' });
+  res.json(asset);
+});
+app.get('/api/fieldmode/checklists', (_req, res) => res.json(fieldModeService.getChecklists()));
+app.post('/api/fieldmode/checklists', (req, res) => res.json(fieldModeService.createChecklist(req.body.name)));
+app.put('/api/fieldmode/checklists/:clId/items/:itemId', (req, res) => {
+  const cl = fieldModeService.updateChecklistItem(req.params.clId, req.params.itemId, req.body.checked);
+  if (!cl) return res.status(404).json({ error: 'Checklist not found' });
+  res.json(cl);
+});
+app.get('/api/fieldmode/archives', (_req, res) => res.json(fieldModeService.getArchives()));
+app.post('/api/fieldmode/archives', (req, res) => res.json(fieldModeService.createArchive(req.body.name, req.body.includes || [])));
+
+// ============================================================================
+// REST API — Phase 7: VDL2
+// ============================================================================
+app.get('/api/vdl2/messages', (req, res) => res.json(vdl2Service.getMessages(parseInt(req.query.limit as string) || 100)));
+app.get('/api/vdl2/status', (_req, res) => res.json(vdl2Service.getStatus()));
+app.get('/api/vdl2/config', (_req, res) => res.json(vdl2Service.getConfig()));
+app.post('/api/vdl2/config', (req, res) => res.json(vdl2Service.updateConfig(req.body)));
+
+// ============================================================================
+// REST API — Phase 8: AI Signal Narrator
+// ============================================================================
+app.post('/api/narrator/narrate', (req, res) => res.json(narratorService.narrate(req.body)));
+app.get('/api/narrator/narrations', (req, res) => res.json(narratorService.getNarrations(parseInt(req.query.limit as string) || 50)));
+app.get('/api/narrator/config', (_req, res) => res.json(narratorService.getConfig()));
+app.post('/api/narrator/config', (req, res) => res.json(narratorService.updateConfig(req.body)));
+
+// ============================================================================
+// REST API — Phase 8: Community Hub
+// ============================================================================
+app.get('/api/community/flowgraphs', (req, res) => res.json(communityService.getFlowgraphs(req.query.category as any, req.query.search as string)));
+app.get('/api/community/flowgraphs/:id', (req, res) => {
+  const fg = communityService.getFlowgraph(req.params.id);
+  fg ? res.json(fg) : res.status(404).json({ error: 'Not found' });
+});
+app.post('/api/community/flowgraphs', (req, res) => res.json(communityService.shareFlowgraph(req.body)));
+app.post('/api/community/flowgraphs/:id/rate', (req, res) => res.json({ ok: communityService.rateFlowgraph(req.params.id, req.body.rating) }));
+app.post('/api/community/flowgraphs/:id/comment', (req, res) => res.json(communityService.commentOnFlowgraph(req.params.id, req.body.author, req.body.text)));
+app.get('/api/community/plugins', (req, res) => res.json(communityService.getPlugins(req.query.category as any)));
+
+// ============================================================================
+// REST API — Phase 8: Academy / Training
+// ============================================================================
+app.get('/api/academy/tutorials', (req, res) => res.json(academyService.getTutorials(req.query.difficulty as any)));
+app.get('/api/academy/tutorials/:id', (req, res) => {
+  const tut = academyService.getTutorial(req.params.id);
+  tut ? res.json(tut) : res.status(404).json({ error: 'Not found' });
+});
+app.get('/api/academy/quiz', (req, res) => res.json(academyService.getQuizQuestions(req.query.difficulty as any, parseInt(req.query.limit as string) || 10)));
+app.post('/api/academy/quiz/answer', (req, res) => res.json(academyService.submitQuizAnswer(req.body.questionId, req.body.answerIndex)));
+app.post('/api/academy/tutorials/:id/complete', (req, res) => { academyService.completeTutorial(req.params.id); res.json({ ok: true }); });
+app.get('/api/academy/progress', (_req, res) => res.json(academyService.getProgress()));
+
+// ============================================================================
+// REST API — Phase 8: Signal History / Time Machine
+// ============================================================================
+app.post('/api/history/record', (req, res) => res.json(historyService.record(req.body)));
+app.post('/api/history/query', (req, res) => res.json(historyService.query(req.body)));
+app.get('/api/history/stats', (_req, res) => res.json(historyService.getStats()));
+app.get('/api/history/config', (_req, res) => res.json(historyService.getConfig()));
+app.post('/api/history/config', (req, res) => res.json(historyService.updateConfig(req.body)));
+
+// ============================================================================
+// REST API — Phase 8: Integration Hub
+// ============================================================================
+app.get('/api/integrations', (_req, res) => res.json(integrationHubService.getAll()));
+app.get('/api/integrations/:id', (req, res) => {
+  const integ = integrationHubService.get(req.params.id as IntegrationType);
+  integ ? res.json(integ) : res.status(404).json({ error: 'Not found' });
+});
+app.post('/api/integrations/:id/configure', (req, res) => res.json(integrationHubService.configure(req.params.id as IntegrationType, req.body)));
+app.post('/api/integrations/:id/test', async (req, res) => res.json(await integrationHubService.test(req.params.id as IntegrationType)));
+app.post('/api/integrations/:id/enable', (req, res) => res.json({ ok: integrationHubService.enable(req.params.id as IntegrationType) }));
+app.post('/api/integrations/:id/disable', (req, res) => res.json({ ok: integrationHubService.disable(req.params.id as IntegrationType) }));
+app.get('/metrics', (_req, res) => { res.set('Content-Type', 'text/plain'); res.send(integrationHubService.getPrometheusMetrics()); });
+
+// ============================================================================
+// REST API — Phase 8: Equipment Manager
+// ============================================================================
+app.get('/api/equipment/database', (_req, res) => res.json(equipmentService.getHardwareDatabase()));
+app.get('/api/equipment/database/:id', (req, res) => {
+  const hw = equipmentService.getHardware(req.params.id as any);
+  hw ? res.json(hw) : res.status(404).json({ error: 'Not found' });
+});
+app.get('/api/equipment/mine', (_req, res) => res.json(equipmentService.getUserEquipment()));
+app.post('/api/equipment/mine', (req, res) => res.json(equipmentService.addEquipment(req.body)));
+app.delete('/api/equipment/mine/:id', (req, res) => res.json({ ok: equipmentService.removeEquipment(req.params.id) }));
+app.get('/api/equipment/compatibility', (_req, res) => res.json(equipmentService.getCompatibility()));
+app.get('/api/equipment/compatible/:decoder', (req, res) => res.json(equipmentService.getCompatibleHardware(req.params.decoder)));
+app.post('/api/equipment/shopping-list', (req, res) => res.json(equipmentService.getShoppingList(req.body.capabilities || [])));
+
+// ============================================================================
 // REST API — Themes (serve theme list; actual theming is client-side)
 // ============================================================================
 app.get('/api/themes', (_req, res) => {
@@ -1935,6 +2317,16 @@ async function gracefulShutdown(signal: string) {
   voiceDecoder.stopDemo();
   frequencyScanner.stopScan();
   spectrumAnalyzer.stopSweep();
+  rtl433Service.stopDemo();
+  pagerService.stopDemo();
+  subghzService.stopDemo();
+  sstvService.stopDemo();
+  meterService.stopDemo();
+  wifiService.stopDemo();
+  bluetoothService.stopDemo();
+  tscmService.stopDemo();
+  meshtasticService.stopDemo();
+  vdl2Service.stopDemo();
 
   // Disconnect SDR
   for (const [, c] of rtlTcpConnections) c.disconnect();
@@ -1962,7 +2354,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`
   ⚡ ╔═══════════════════════════════════════╗
   ⚡ ║         S I G N A L F O R G E         ║
-  ⚡ ║     Universal Radio Platform v0.6     ║
+  ⚡ ║     Universal Radio Platform v0.7     ║
   ⚡ ╠═══════════════════════════════════════╣
   ⚡ ║  HTTP:  http://0.0.0.0:${PORT}            ║
   ⚡ ║  WS:    ws://0.0.0.0:${PORT}/ws           ║
