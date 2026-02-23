@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useLocationStore } from '../stores/location';
+import { getGpuDspEngine, type GpuStatus } from '../gpu/engine';
 
 export const StatusBar: React.FC = () => {
   const [time, setTime] = useState(new Date());
   const [fps, setFps] = useState(0);
-  const [gpuAvailable, setGpuAvailable] = useState(false);
+  const [gpuStatus, setGpuStatus] = useState<GpuStatus | null>(null);
   const [serverStatus, setServerStatus] = useState<{ version: string; uptime: number } | null>(null);
   const [solarData, setSolarData] = useState<{ solarFlux: number; kIndex: number; geomagField: string } | null>(null);
   const { observer } = useLocationStore();
@@ -15,12 +16,7 @@ export const StatusBar: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if ('gpu' in navigator) {
-      (navigator as unknown as { gpu: { requestAdapter: () => Promise<unknown> } }).gpu
-        .requestAdapter()
-        .then((adapter: unknown) => setGpuAvailable(!!adapter))
-        .catch(() => setGpuAvailable(false));
-    }
+    getGpuDspEngine().then(engine => setGpuStatus(engine.status)).catch(() => {});
 
     let frames = 0;
     let lastTime = performance.now();
@@ -63,9 +59,9 @@ export const StatusBar: React.FC = () => {
 
   return (
     <footer className="h-7 flex items-center px-4 border-t border-forge-border bg-forge-surface/80 text-[10px] font-mono text-forge-text-dim">
-      <span className="flex items-center gap-1.5">
-        <span className={`w-1.5 h-1.5 rounded-full ${gpuAvailable ? 'bg-forge-green' : 'bg-forge-amber'}`} />
-        {gpuAvailable ? 'WebGPU' : 'Canvas2D'}
+      <span className="flex items-center gap-1.5" title={gpuStatus?.available ? `${gpuStatus.adapterName} (${gpuStatus.vendor})` : 'JS Fallback — no WebGPU'}>
+        <span className={`w-1.5 h-1.5 rounded-full ${gpuStatus?.available ? 'bg-forge-green' : 'bg-forge-amber'}`} />
+        {gpuStatus?.available ? `WebGPU · ${gpuStatus.adapterName}` : 'JS Fallback'}
       </span>
       <span className="mx-3 text-forge-border">│</span>
       <span>{fps} FPS</span>

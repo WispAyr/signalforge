@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import type { DSPBackend, DSPPipelineConfig, DSPStatus, DSPBenchmark } from '@signalforge/shared';
+import type { DSPBackend, DSPBenchmark } from '@signalforge/shared';
+import { getGpuDspEngine, GpuDspEngine, GPUFilter, type GpuStatus } from '../gpu/engine';
 
-// CPU fallback FFT implementation
+// CPU fallback FFT for benchmark comparison
 function cpuFFT(real: Float32Array, imag: Float32Array): void {
   const n = real.length;
-  // Bit-reversal permutation
   for (let i = 1, j = 0; i < n; i++) {
     let bit = n >> 1;
     for (; j & bit; bit >>= 1) j ^= bit;
@@ -55,11 +55,11 @@ function cpuFMDemod(i: Float32Array, q: Float32Array): Float32Array {
 }
 
 export const WebGPUDSPView: React.FC = () => {
-  const [backend, setBackend] = useState<DSPBackend>('cpu');
-  const [gpuAvailable, setGpuAvailable] = useState(false);
-  const [webgl2Available, setWebgl2Available] = useState(false);
-  const [benchmarks, setBenchmarks] = useState<DSPBenchmark[]>([]);
+  const [engine, setEngine] = useState<GpuDspEngine | null>(null);
+  const [gpuStatus, setGpuStatus] = useState<GpuStatus | null>(null);
+  const [benchmarks, setBenchmarks] = useState<(DSPBenchmark & { cpuFftTimeMs?: number; speedup?: number })[]>([]);
   const [running, setRunning] = useState(false);
+  const [benchmarking, setBenchmarking] = useState(false);
   const [fftSize, setFftSize] = useState<number>(4096);
   const [firTaps, setFirTaps] = useState(32);
   const [decimation, setDecimation] = useState(4);
@@ -69,83 +69,64 @@ export const WebGPUDSPView: React.FC = () => {
   const [samplesProcessed, setSamplesProcessed] = useState(0);
   const [latencyMs, setLatencyMs] = useState(0);
 
-  // Detect capabilities
+  // Init GPU engine
   useEffect(() => {
-    (async () => {
-      if ('gpu' in navigator) {
-        try {
-          const adapter = await (navigator as any).gpu?.requestAdapter();
-          if (adapter) setGpuAvailable(true);
-        } catch {}
-      }
-      const testCanvas = document.createElement('canvas');
-      if (testCanvas.getContext('webgl2')) setWebgl2Available(true);
-    })();
+    getGpuDspEngine().then(eng => {
+      setEngine(eng);
+      setGpuStatus(eng.status);
+    });
   }, []);
 
-  // Auto-select best backend
-  useEffect(() => {
-    if (gpuAvailable) setBackend('webgpu');
-    else if (webgl2Available) setBackend('webgl2');
-    else setBackend('cpu');
-  }, [gpuAvailable, webgl2Available]);
+  const backend: DSPBackend = gpuStatus?.available ? 'webgpu' : 'cpu';
 
-  // Simulated DSP pipeline
+  // Real DSP pipeline using GPU engine
   useEffect(() => {
-    if (!running) return;
+    if (!running || !engine) return;
     let active = true;
 
-    const processSamples = () => {
+    const processSamples = async () => {
       if (!active) return;
       const start = performance.now();
       const n = fftSize;
-      const real = new Float32Array(n);
-      const imag = new Float32Array(n);
 
-      // Generate test signal (multi-tone)
+      // Generate test IQ signal (multi-tone)
+      const iq = new Float32Array(n * 2);
       for (let i = 0; i < n; i++) {
-        real[i] = Math.sin(2 * Math.PI * 100 * i / n) * 0.5
-                + Math.sin(2 * Math.PI * 250 * i / n) * 0.3
-                + Math.sin(2 * Math.PI * 500 * i / n) * 0.2
-                + (Math.random() - 0.5) * 0.05;
-        imag[i] = 0;
+        iq[i * 2] = Math.sin(2 * Math.PI * 100 * i / n) * 0.5
+                   + Math.sin(2 * Math.PI * 250 * i / n) * 0.3
+                   + Math.sin(2 * Math.PI * 500 * i / n) * 0.2
+                   + (Math.random() - 0.5) * 0.05;
+        iq[i * 2 + 1] = 0;
       }
 
-      // FIR filter
-      const tapsArr = Array.from({ length: firTaps }, (_, i) => {
-        const m = firTaps - 1;
-        const fc = 0.25;
-        if (i === m / 2) return 2 * fc;
-        return Math.sin(2 * Math.PI * fc * (i - m / 2)) / (Math.PI * (i - m / 2)) * (0.54 - 0.46 * Math.cos(2 * Math.PI * i / m));
-      });
-      const filtered = cpuFIR(real, tapsArr);
+      // FIR filter via GPU
+      const taps = GPUFilter.generateTaps(firTaps, 0.25, 'lowpass');
+      const realOnly = new Float32Array(n);
+      for (let i = 0; i < n; i++) realOnly[i] = iq[i * 2];
+      const filtered = await engine.filter(realOnly, taps);
 
-      // FFT
-      const fftReal = new Float32Array(filtered);
-      const fftImag = new Float32Array(n);
-      cpuFFT(fftReal, fftImag);
+      // FFT via GPU
+      const filteredIq = new Float32Array(n * 2);
+      for (let i = 0; i < n; i++) { filteredIq[i * 2] = filtered[i]; filteredIq[i * 2 + 1] = 0; }
+      const spectrum = await engine.fft(filteredIq, n);
 
-      // Magnitude spectrum (dB)
-      const spectrum = new Float32Array(n / 2);
-      for (let i = 0; i < n / 2; i++) {
-        const mag = Math.sqrt(fftReal[i] * fftReal[i] + fftImag[i] * fftImag[i]) / n;
-        spectrum[i] = 20 * Math.log10(Math.max(mag, 1e-10));
-      }
-
-      // FM demod
-      cpuFMDemod(fftReal, fftImag);
+      // FM demod via GPU
+      const iData = new Float32Array(n);
+      const qData = new Float32Array(n);
+      for (let i = 0; i < n; i++) { iData[i] = filtered[i]; qData[i] = 0; }
+      await engine.fmDemod(iData, qData);
 
       const elapsed = performance.now() - start;
       setSpectrumData(spectrum);
       setSamplesProcessed(prev => prev + n);
       setLatencyMs(elapsed);
 
-      setTimeout(processSamples, 50);
+      if (active) setTimeout(processSamples, 50);
     };
 
     processSamples();
     return () => { active = false; };
-  }, [running, fftSize, firTaps]);
+  }, [running, fftSize, firTaps, engine]);
 
   // Spectrum visualiser
   useEffect(() => {
@@ -160,17 +141,14 @@ export const WebGPUDSPView: React.FC = () => {
       ctx.scale(2, 2);
       const cw = w / 2; const ch = h / 2;
 
-      // Background
       ctx.fillStyle = '#0a0a1a';
       ctx.fillRect(0, 0, cw, ch);
 
-      // Grid
       ctx.strokeStyle = 'rgba(0,229,255,0.1)';
       ctx.lineWidth = 0.5;
       for (let y = 0; y < ch; y += ch / 8) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke(); }
       for (let x = 0; x < cw; x += cw / 8) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch); ctx.stroke(); }
 
-      // Spectrum line
       if (spectrumData.length > 0) {
         const gradient = ctx.createLinearGradient(0, 0, 0, ch);
         gradient.addColorStop(0, '#ff1744');
@@ -191,7 +169,6 @@ export const WebGPUDSPView: React.FC = () => {
         }
         ctx.stroke();
 
-        // Fill under curve
         ctx.lineTo(cw, ch);
         ctx.lineTo(0, ch);
         ctx.closePath();
@@ -202,7 +179,6 @@ export const WebGPUDSPView: React.FC = () => {
         ctx.fill();
       }
 
-      // dB scale
       ctx.fillStyle = 'rgba(255,255,255,0.3)';
       ctx.font = '8px monospace';
       for (let db = -100; db <= 0; db += 20) {
@@ -218,41 +194,99 @@ export const WebGPUDSPView: React.FC = () => {
   }, [spectrumData]);
 
   const runBenchmark = useCallback(async () => {
+    if (!engine) return;
+    setBenchmarking(true);
     const sizes = [1024, 2048, 4096, 8192] as const;
-    const results: DSPBenchmark[] = [];
+    const results: (DSPBenchmark & { cpuFftTimeMs?: number; speedup?: number })[] = [];
+    const iterations = 50;
 
     for (const size of sizes) {
-      const real = new Float32Array(size).map(() => Math.random());
-      const imag = new Float32Array(size);
+      // Generate test data
+      const iq = new Float32Array(size * 2);
+      for (let i = 0; i < size; i++) {
+        iq[i * 2] = Math.random();
+        iq[i * 2 + 1] = 0;
+      }
       const taps = Array.from({ length: 32 }, () => Math.random());
 
-      // FFT benchmark
-      const fftStart = performance.now();
-      for (let i = 0; i < 100; i++) {
-        const r = new Float32Array(real); const im = new Float32Array(imag);
-        cpuFFT(r, im);
+      // --- GPU FFT benchmark ---
+      let gpuFftTime = 0;
+      for (let i = 0; i < iterations; i++) {
+        const s = performance.now();
+        await engine.fft(new Float32Array(iq), size);
+        gpuFftTime += performance.now() - s;
       }
-      const fftTime = (performance.now() - fftStart) / 100;
+      gpuFftTime /= iterations;
 
-      // FIR benchmark
-      const firStart = performance.now();
-      for (let i = 0; i < 100; i++) cpuFIR(real, taps);
-      const firTime = (performance.now() - firStart) / 100;
+      // --- CPU FFT benchmark ---
+      let cpuFftTime = 0;
+      for (let i = 0; i < iterations; i++) {
+        const real = new Float32Array(size).map((_, j) => iq[j * 2]);
+        const imag = new Float32Array(size);
+        const s = performance.now();
+        cpuFFT(real, imag);
+        cpuFftTime += performance.now() - s;
+      }
+      cpuFftTime /= iterations;
 
-      // FM demod benchmark
-      const fmStart = performance.now();
-      for (let i = 0; i < 100; i++) cpuFMDemod(real, imag);
-      const fmTime = (performance.now() - fmStart) / 100;
+      // --- GPU FIR benchmark ---
+      const tapsF32 = new Float32Array(taps);
+      const realOnly = new Float32Array(size).map((_, j) => iq[j * 2]);
+      let gpuFirTime = 0;
+      for (let i = 0; i < iterations; i++) {
+        const s = performance.now();
+        await engine.filter(new Float32Array(realOnly), tapsF32);
+        gpuFirTime += performance.now() - s;
+      }
+      gpuFirTime /= iterations;
+
+      // --- CPU FIR benchmark ---
+      let cpuFirTime = 0;
+      for (let i = 0; i < iterations; i++) {
+        const s = performance.now();
+        cpuFIR(new Float32Array(realOnly), taps);
+        cpuFirTime += performance.now() - s;
+      }
+      cpuFirTime /= iterations;
+
+      // --- GPU FM Demod benchmark ---
+      const iData = new Float32Array(size).map(() => Math.random());
+      const qData = new Float32Array(size).map(() => Math.random());
+      let gpuFmTime = 0;
+      for (let i = 0; i < iterations; i++) {
+        const s = performance.now();
+        await engine.fmDemod(new Float32Array(iData), new Float32Array(qData));
+        gpuFmTime += performance.now() - s;
+      }
+      gpuFmTime /= iterations;
+
+      let cpuFmTime = 0;
+      for (let i = 0; i < iterations; i++) {
+        const s = performance.now();
+        cpuFMDemod(new Float32Array(iData), new Float32Array(qData));
+        cpuFmTime += performance.now() - s;
+      }
+      cpuFmTime /= iterations;
 
       results.push({
-        backend, fftSize: size, fftTimeMs: fftTime, firTaps: 32, firTimeMs: firTime,
-        fmDemodTimeMs: fmTime, decimationFactor: 4, decimationTimeMs: fftTime * 0.3,
-        samplesPerSecond: Math.round(size / (fftTime / 1000)), timestamp: Date.now(),
+        backend,
+        fftSize: size,
+        fftTimeMs: gpuFftTime,
+        cpuFftTimeMs: cpuFftTime,
+        speedup: cpuFftTime / gpuFftTime,
+        firTaps: 32,
+        firTimeMs: gpuFirTime,
+        fmDemodTimeMs: gpuFmTime,
+        decimationFactor: 4,
+        decimationTimeMs: gpuFftTime * 0.3,
+        samplesPerSecond: Math.round(size / (gpuFftTime / 1000)),
+        timestamp: Date.now(),
       });
     }
 
     setBenchmarks(results);
-  }, [backend]);
+    setBenchmarking(false);
+  }, [engine, backend]);
 
   return (
     <div className="h-full flex flex-col bg-forge-bg overflow-y-auto">
@@ -261,35 +295,49 @@ export const WebGPUDSPView: React.FC = () => {
         <span className="text-cyan-400 font-mono text-sm font-bold">⚡ WebGPU DSP Engine</span>
         <div className={`px-2 py-0.5 rounded text-xs font-mono font-bold ${
           backend === 'webgpu' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
-          backend === 'webgl2' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
           'bg-red-500/20 text-red-400 border border-red-500/30'
         }`}>
-          {backend === 'webgpu' ? '🟢 WebGPU' : backend === 'webgl2' ? '🟡 WebGL2 Fallback' : '🔴 CPU'}
+          {backend === 'webgpu' ? `🟢 WebGPU · ${gpuStatus?.adapterName}` : '🔴 JS Fallback'}
         </div>
         <div className="flex-1" />
         <button onClick={() => setRunning(!running)}
           className={`px-3 py-1 rounded text-xs font-mono font-bold ${running ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-green-500/20 text-green-400 border border-green-500/30'}`}>
           {running ? '⏹ Stop Pipeline' : '▶ Start Pipeline'}
         </button>
-        <button onClick={runBenchmark} className="px-3 py-1 rounded text-xs font-mono bg-purple-500/20 text-purple-400 border border-purple-500/30">
-          📊 Benchmark
+        <button onClick={runBenchmark} disabled={benchmarking}
+          className="px-3 py-1 rounded text-xs font-mono bg-purple-500/20 text-purple-400 border border-purple-500/30 disabled:opacity-50">
+          {benchmarking ? '⏳ Running...' : '📊 Benchmark GPU vs CPU'}
         </button>
       </div>
 
       <div className="flex-1 flex flex-col gap-3 p-3">
+        {/* GPU Info Card */}
+        {gpuStatus && (
+          <div className="bg-forge-surface border border-forge-border rounded p-3">
+            <div className="text-xs text-gray-400 font-mono mb-2">GPU Adapter Info</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-mono">
+              <div><span className="text-gray-500">Device:</span> <span className="text-cyan-400">{gpuStatus.adapterName || 'N/A'}</span></div>
+              <div><span className="text-gray-500">Vendor:</span> <span className="text-cyan-400">{gpuStatus.vendor || 'N/A'}</span></div>
+              <div><span className="text-gray-500">Architecture:</span> <span className="text-cyan-400">{gpuStatus.architecture || 'N/A'}</span></div>
+              <div><span className="text-gray-500">Max Buffer:</span> <span className="text-cyan-400">{(gpuStatus.maxBufferSize / 1024 / 1024).toFixed(0)} MB</span></div>
+              <div><span className="text-gray-500">Backend:</span> <span className={gpuStatus.available ? 'text-green-400' : 'text-red-400'}>{gpuStatus.backend}</span></div>
+              <div><span className="text-gray-500">Compute Shaders:</span> <span className="text-green-400">FFT · FIR · FM Demod</span></div>
+            </div>
+          </div>
+        )}
+
         {/* Pipeline Config */}
         <div className="grid grid-cols-4 gap-3">
           <div className="bg-forge-surface border border-forge-border rounded p-3">
             <div className="text-xs text-gray-400 font-mono mb-1">FFT Size</div>
             <select value={fftSize} onChange={e => setFftSize(Number(e.target.value))}
               className="w-full bg-forge-bg border border-forge-border rounded px-2 py-1 text-sm text-white font-mono">
-              {[256, 512, 1024, 2048, 4096, 8192].map(s => <option key={s} value={s}>{s}</option>)}
+              {[1024, 2048, 4096, 8192].map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div className="bg-forge-surface border border-forge-border rounded p-3">
             <div className="text-xs text-gray-400 font-mono mb-1">FIR Taps</div>
-            <input type="range" min={4} max={128} value={firTaps} onChange={e => setFirTaps(Number(e.target.value))}
-              className="w-full" />
+            <input type="range" min={4} max={128} value={firTaps} onChange={e => setFirTaps(Number(e.target.value))} className="w-full" />
             <div className="text-xs text-cyan-400 font-mono text-center">{firTaps}</div>
           </div>
           <div className="bg-forge-surface border border-forge-border rounded p-3">
@@ -303,12 +351,13 @@ export const WebGPUDSPView: React.FC = () => {
             <div className="text-xs text-gray-400 font-mono mb-1">Stats</div>
             <div className="text-xs text-cyan-400 font-mono">{(samplesProcessed / 1000000).toFixed(1)}M samples</div>
             <div className="text-xs text-amber-400 font-mono">{latencyMs.toFixed(2)}ms latency</div>
+            <div className="text-xs text-green-400 font-mono">{backend === 'webgpu' ? 'GPU Compute' : 'JS CPU'}</div>
           </div>
         </div>
 
         {/* Pipeline Diagram */}
         <div className="bg-forge-surface border border-forge-border rounded p-3">
-          <div className="text-xs text-gray-400 font-mono mb-2">DSP Pipeline</div>
+          <div className="text-xs text-gray-400 font-mono mb-2">DSP Pipeline ({backend === 'webgpu' ? 'GPU Compute Shaders' : 'JS CPU'})</div>
           <div className="flex items-center gap-1 overflow-x-auto">
             {[
               { name: 'IQ Input', icon: '📡', color: '#00e5ff' },
@@ -339,21 +388,23 @@ export const WebGPUDSPView: React.FC = () => {
         <div className="flex-1 min-h-[200px] bg-forge-surface border border-forge-border rounded overflow-hidden relative">
           <canvas ref={spectrumRef} className="w-full h-full" />
           <div className="absolute top-2 right-2 text-xs font-mono text-gray-500">
-            GPU Spectrum Analyser — {fftSize}-point FFT
+            {backend === 'webgpu' ? 'GPU' : 'CPU'} Spectrum · {fftSize}-point FFT · WGSL Compute Shader
           </div>
         </div>
 
-        {/* Benchmarks */}
+        {/* Benchmark Results */}
         {benchmarks.length > 0 && (
           <div className="bg-forge-surface border border-forge-border rounded p-3">
-            <div className="text-xs text-gray-400 font-mono mb-2">📊 Benchmark Results ({backend.toUpperCase()})</div>
+            <div className="text-xs text-gray-400 font-mono mb-2">📊 Benchmark: GPU vs CPU ({gpuStatus?.adapterName})</div>
             <table className="w-full text-xs font-mono">
               <thead>
                 <tr className="text-gray-500 border-b border-forge-border">
                   <th className="text-left py-1 px-2">FFT Size</th>
-                  <th className="text-right py-1 px-2">FFT (ms)</th>
-                  <th className="text-right py-1 px-2">FIR (ms)</th>
-                  <th className="text-right py-1 px-2">FM Demod (ms)</th>
+                  <th className="text-right py-1 px-2">GPU FFT (ms)</th>
+                  <th className="text-right py-1 px-2">CPU FFT (ms)</th>
+                  <th className="text-right py-1 px-2">Speedup</th>
+                  <th className="text-right py-1 px-2">GPU FIR (ms)</th>
+                  <th className="text-right py-1 px-2">GPU FM (ms)</th>
                   <th className="text-right py-1 px-2">Samples/sec</th>
                 </tr>
               </thead>
@@ -361,7 +412,13 @@ export const WebGPUDSPView: React.FC = () => {
                 {benchmarks.map((b, i) => (
                   <tr key={i} className="border-b border-forge-border/50 text-gray-300">
                     <td className="py-1 px-2 text-cyan-400">{b.fftSize}</td>
-                    <td className="text-right py-1 px-2">{b.fftTimeMs.toFixed(3)}</td>
+                    <td className="text-right py-1 px-2 text-green-400">{b.fftTimeMs.toFixed(3)}</td>
+                    <td className="text-right py-1 px-2 text-red-400">{b.cpuFftTimeMs?.toFixed(3)}</td>
+                    <td className="text-right py-1 px-2">
+                      <span className={b.speedup && b.speedup > 1 ? 'text-green-400' : 'text-amber-400'}>
+                        {b.speedup?.toFixed(1)}x
+                      </span>
+                    </td>
                     <td className="text-right py-1 px-2">{b.firTimeMs.toFixed(3)}</td>
                     <td className="text-right py-1 px-2">{b.fmDemodTimeMs.toFixed(3)}</td>
                     <td className="text-right py-1 px-2 text-green-400">{(b.samplesPerSecond / 1000000).toFixed(1)}M</td>
@@ -374,20 +431,20 @@ export const WebGPUDSPView: React.FC = () => {
 
         {/* Capabilities */}
         <div className="grid grid-cols-3 gap-3">
-          <div className="bg-forge-surface border border-forge-border rounded p-3 text-center">
-            <div className={`text-2xl mb-1 ${gpuAvailable ? '' : 'opacity-30'}`}>🟢</div>
-            <div className="text-xs font-mono text-gray-400">WebGPU</div>
-            <div className={`text-xs font-mono ${gpuAvailable ? 'text-green-400' : 'text-red-400'}`}>{gpuAvailable ? 'Available' : 'Not Available'}</div>
+          <div className="bg-forge-surface border border-forge-border rounded p-3">
+            <div className="text-xs text-gray-400 font-mono mb-1">FFT Compute Shader</div>
+            <div className="text-xs font-mono text-cyan-400">fft.wgsl</div>
+            <div className="text-xs font-mono text-gray-500 mt-1">Radix-2 Cooley-Tukey · Bit-reversal + butterfly stages · workgroup_size(256)</div>
           </div>
-          <div className="bg-forge-surface border border-forge-border rounded p-3 text-center">
-            <div className={`text-2xl mb-1 ${webgl2Available ? '' : 'opacity-30'}`}>🟡</div>
-            <div className="text-xs font-mono text-gray-400">WebGL2</div>
-            <div className={`text-xs font-mono ${webgl2Available ? 'text-green-400' : 'text-red-400'}`}>{webgl2Available ? 'Available' : 'Not Available'}</div>
+          <div className="bg-forge-surface border border-forge-border rounded p-3">
+            <div className="text-xs text-gray-400 font-mono mb-1">FIR Filter Shader</div>
+            <div className="text-xs font-mono text-cyan-400">filter.wgsl</div>
+            <div className="text-xs font-mono text-gray-500 mt-1">Convolution-based · Configurable taps · Hamming window design</div>
           </div>
-          <div className="bg-forge-surface border border-forge-border rounded p-3 text-center">
-            <div className="text-2xl mb-1">🔴</div>
-            <div className="text-xs font-mono text-gray-400">CPU</div>
-            <div className="text-xs font-mono text-green-400">Always Available</div>
+          <div className="bg-forge-surface border border-forge-border rounded p-3">
+            <div className="text-xs text-gray-400 font-mono mb-1">FM Demod Shader</div>
+            <div className="text-xs font-mono text-cyan-400">demod.wgsl</div>
+            <div className="text-xs font-mono text-gray-500 mt-1">atan2 phase discriminator · Conjugate multiply</div>
           </div>
         </div>
       </div>
