@@ -11,119 +11,174 @@
 [![WebGPU](https://img.shields.io/badge/WebGPU-Accelerated-ff6600)](https://www.w3.org/TR/webgpu/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
+> **⚠️ Early Development** — SignalForge is under active development. See the [Reality Check](#-reality-check) section for an honest assessment of what works today versus what's planned.
+
 ---
 
 ## What is SignalForge?
 
 SignalForge is a **visual, node-based radio signal processing platform** that runs in your browser. Think of it as a digital workbench where you wire together SDR sources, filters, demodulators, decoders, and displays — all rendered with GPU acceleration at 60fps+.
 
-### 🎯 Supported Domains
+### 🎯 Target Domains
 
-| Domain | Capabilities |
-|--------|-------------|
-| 🛰️ **Satellites** | TLE tracking, pass prediction, Doppler correction, weather sat image decoding (NOAA, METEOR) |
-| 📻 **Amateur Radio** | HF/VHF/UHF, RAYNET emergency comms, repeater monitoring, APRS |
-| ✈️ **Aviation** | ADS-B aircraft tracking, ACARS message decoding |
-| 🚢 **Maritime** | AIS vessel tracking and identification |
-| 📡 **IoT** | LoRa/Meshtastic packet decoding |
-| ⚡ **Spectrum** | Wideband analysis, signal identification, waterfall display |
-| 🌦️ **Weather** | APT/LRPT satellite image decoding, NOAA/METEOR |
+| Domain | Protocols / Signals |
+|--------|-------------------|
+| 🛰️ Satellite | TLE tracking, pass prediction, Doppler correction, SatNOGS |
+| ✈️ Aviation | ADS-B, ACARS, VDL2 |
+| 🚢 Maritime | AIS vessel tracking |
+| 📻 Amateur Radio | APRS, digital voice (DMR/D-STAR/C4FM), DX cluster, logbook |
+| 📡 RF Analysis | Spectrum analysis, waterfall, signal identification, TSCM |
+| 🌡️ IoT/ISM | rtl_433 sensors, utility meters, sub-GHz |
+| 📟 Paging | POCSAG, FLEX |
+| 🌐 Mesh | Meshtastic LoRa |
+| 🎵 Broadcast | FM/AM demodulation, SSTV, weather satellites |
 
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" alt="Operations Dashboard" width="800"/>
-  <br/><em>Operations Dashboard — system overview with live stats</em>
+  <img src="docs/screenshots/dashboard.jpg" alt="Operations Dashboard" width="800"/>
+  <br/><em>Operations Center — live activity feed, quick launch, system status</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/flow-editor.png" alt="Flow Editor" width="800"/>
-  <br/><em>Visual Flow Editor — drag-and-drop signal processing chains</em>
+  <img src="docs/screenshots/globe.jpg" alt="3D Globe" width="800"/>
+  <br/><em>3D Globe — real satellite positions, aircraft, vessels on interactive Earth</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/waterfall.png" alt="Waterfall & Spectrum" width="800"/>
-  <br/><em>Waterfall Display — real-time spectrum analysis</em>
+  <img src="docs/screenshots/flow-editor.jpg" alt="Flow Editor" width="800"/>
+  <br/><em>Flow Editor — visual signal processing pipelines, drag-and-drop</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/map.png" alt="Map View" width="800"/>
-  <br/><em>Map View — satellites, aircraft, vessels, APRS stations</em>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/satellites.png" alt="Satellite Tracking" width="800"/>
-  <br/><em>Satellite Tracking — pass predictions with Doppler correction</em>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/scanner.png" alt="Frequency Scanner" width="800"/>
-  <br/><em>Frequency Scanner — sweep, detect, identify</em>
+  <img src="docs/screenshots/waterfall.jpg" alt="Spectrum Analyzer" width="800"/>
+  <br/><em>Spectrum Analyzer — waterfall display with signal markers</em>
 </p>
 
 ---
 
-### ✨ Key Features
+## ✨ Key Features
 
-- **Visual Flow Editor** — Drag-and-drop node graph. Wire SDR sources → filters → demodulators → decoders → displays
-- **GPU Waterfall** — WebGPU compute shaders for 60fps+ spectrum/waterfall rendering
-- **Multi-SDR** — Connect multiple SDR devices simultaneously via WebUSB or WebSocket bridge
-- **Live Map** — Real-time satellite footprints, aircraft positions, vessel tracks on an interactive map
-- **Modular Decoders** — Each protocol is a flowgraph node: FM, AM, SSB, ADS-B, APRS, AIS, SSTV, LoRa...
-- **Dark Sci-Fi UI** — LCARS-meets-mission-control aesthetic. Cyan and amber on dark. Beautiful.
-- **TypeScript Throughout** — Frontend AND backend, unified stack
+- **Flow Editor** — Visual node-based signal processing. Wire sources → filters → demodulators → outputs
+- **25+ Node Types** — SDR sources, filters, demodulators, decoders, displays, sinks
+- **Satellite Tracking** — 14,400+ satellites from CelesTrak with SGP4, pass prediction, Doppler
+- **3D Globe** — Globe.gl with night Earth, satellite orbits, aircraft trails, vessel markers
+- **Spectrum Analyzer** — Real-time waterfall and spectrum displays
+- **Multi-SDR** — RTL-SDR (rtl_tcp), SoapySDR Remote, Aaronia Spectran V6
+- **Protocol Decoders** — ADS-B, ACARS, AIS, APRS, POCSAG, VDL2, rtl_433
+- **MCP Server** — 41 tools for AI agent integration
+- **4 Themes** — Midnight, Amber Terminal, Arctic, High Contrast
+- **Signal Database** — 28+ catalogued signals with frequencies and descriptions
+- **Logbook** — ADIF-compatible amateur radio logging
+- **Command Palette** — Ctrl+K quick navigation
 
-### 🌍 Phase 8: Next-Gen Features (v0.8.0)
+---
 
-| Feature | Description |
-|---------|-------------|
-| 🌐 **3D Globe** | Interactive globe with satellite orbits, day/night terminator, aircraft/vessel/edge markers, atmospheric glow, city lights. Toggle 2D/3D |
-| ⚡ **WebGPU Compute DSP** | GPU-accelerated FFT, FIR filter, FM demod via compute shaders. WebGL2 fallback. Status indicator |
-| 🤖 **AI Signal Narrator** | LLM-powered frequency descriptions — band identification, anomaly detection, auto-narrate mode |
-| 👥 **Community Hub** | Share/browse flowgraphs, plugin marketplace, user profiles, ratings & comments |
-| 🎓 **Training Academy** | Interactive tutorials (FM, ADS-B, weather sats, SIGINT), quiz system, progress tracking with ranks |
-| 🪟 **Multi-Window** | Pop-out views via BroadcastChannel API, layout presets for multi-monitor setups |
-| ⏪ **Signal Time Machine** | Historical playback — "what was on this frequency at X time", queryable timeline |
-| 🔌 **Integration Hub** | One-click: Home Assistant, Grafana, Telegram, Discord, FlightAware, APRS-IS, Broadcastify, MarineTraffic, Node-RED |
-| 📻 **Equipment Manager** | SDR hardware database, "My Equipment", compatibility matrix, shopping list generator |
-| 🎬 **Cinematic Mode** | Fullscreen visualisation for displays/events — globe, waterfall, aircraft, heatmap, spectrum, satellites. Auto-cycle |
+## 🔍 Reality Check
+
+**We believe in radical transparency.** Here's what actually works today versus what's demo/planned.
+
+### ✅ Real — Works with actual data/hardware
+
+| Feature | Notes |
+|---------|-------|
+| Satellite tracking | CelesTrak TLE + SGP4 — real orbital positions |
+| ADS-B decoder | BaseStation protocol parser (needs dump1090 + RTL-SDR) |
+| RTL-TCP SDR bridge | Full protocol client, real IQ streaming |
+| SoapySDR client | SoapyRemote protocol, connects to real servers |
+| Rotator control | Hamlib rotctld TCP protocol |
+| MQTT integration | Full MQTT 3.1.1 client |
+| GPS/Location | gpsd client, browser geolocation, Nominatim geocoding |
+| SatNOGS API | Real API integration |
+| Browser DSP | FIR filters, FM/AM/SSB demod in JavaScript (Web Audio) |
+| Flow editor | Canvas-based node graph — drag, drop, wire, save, load |
+| Waterfall/Spectrum | Canvas rendering — works with real or demo data |
+| 3D Globe | Globe.gl + Three.js, interactive, real satellite positions |
+| UI/Navigation | Sidebar, command palette, themes, responsive |
+| MCP server | 41 tools via @modelcontextprotocol/sdk |
+| Signal database | 28+ built-in signals, searchable |
+
+### 🟡 Demo Mode — Real code exists, needs hardware to light up
+
+| Feature | What's needed |
+|---------|--------------|
+| ADS-B aircraft | Plug in RTL-SDR + run dump1090 |
+| AIS vessels | Need AIS decoder (rtl_ais) feeding data |
+| ACARS messages | Need acarsdec running |
+| APRS stations | Need direwolf or APRS-IS connection |
+| IQ streaming | Plug in RTL-SDR → rtl_tcp → real waterfall |
+| Observation scheduler | Needs SDR + rotator connected |
+
+### 🟠 Stub — Structure exists, core logic is simulated
+
+rtl_433 IoT, POCSAG/FLEX pager, sub-GHz/HackRF, SSTV, utility meters, WiFi/Bluetooth scanning, TSCM counter-surveillance, Meshtastic, VDL2, digital voice, DX cluster, Aaronia Spectran, number stations, audio streaming
+
+### 🔴 Planned — UI/concept only
+
+WebGPU compute shaders (DSP runs in JS currently), AI signal narrator, community hub, training academy, AI signal classifier, multi-window, time machine, integration hub, equipment manager, geo-fencing, waterfall recording, external plugin loader, edge node package, logbook persistence
+
+📄 **Full details:** [docs/REALITY-CHECK.md](docs/REALITY-CHECK.md)
+
+---
+
+## 🗺️ Roadmap
+
+### Completed
+
+| Version | Phase | Highlights |
+|---------|-------|-----------|
+| v0.1.0 | Scaffold | Flow editor, waterfall demo, satellite map, dark UI |
+| v0.2.0 | Foundations | 14,400 real satellites, ADS-B/ACARS/AIS/APRS decoders, enhanced waterfall |
+| v0.3.0 | Observer | Location system (5 sources), signal database, recording framework, WebSDR, multi-SDR |
+| v0.4.0 | Hardware | RTL-TCP bridge, SoapySDR, browser DSP, spectrum analyzer, Doppler, rotator, scheduler, MQTT, Docker |
+| v0.5.0 | Platform | Multi-user, plugin architecture, edge nodes, frequency scanner, AI classifier, themes |
+| v0.6.0 | Integration | SatNOGS, waterfall recording, geo-fencing, digital voice, propagation, logbook, DX cluster |
+| v0.7.0 | SIGINT | rtl_433, POCSAG/FLEX, sub-GHz, SSTV, WiFi/BT scanning, TSCM, Meshtastic, VDL2, 41 MCP tools |
+| v0.8.0 | Next-Gen | 3D globe, WebGPU DSP framework, AI narrator, community hub, training, multi-window |
+| v0.9.0 | UI/UX | Design system, sidebar navigation, command palette, responsive, 4 theme polish, accessibility |
+| v0.10.0 | Globe + Aaronia | Globe.gl 3D Earth, Aaronia Spectran V6 integration, TSCM profiles |
+
+### Next Up
+
+| Phase | Target | Description |
+|-------|--------|-------------|
+| **A: Real Core Loop** | Next | Connect RTL-SDR → real IQ → real waterfall → real FM demod → audio. SQLite persistence. |
+| **B: Real Decoders** | Near-term | dump1090 ADS-B, rtl_433 IoT, direwolf APRS, acarsdec — via subprocess + JSON parse |
+| **C: Edge Nodes** | Near-term | Real edge-node on Raspberry Pi + Hailo-8 AI. RTL-SDR + GPS → stream to server |
+| **D: Hard Integrations** | Medium-term | DX cluster telnet, Meshtastic serial, SSTV decode, digital voice (DSD+), WebGPU FFT shaders |
+| **E: Platform** | Long-term | Community backend, training content, real plugin loader, AI narrator, multi-window, persistence |
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    SignalForge Browser UI                     │
-│                                                               │
-│  ┌─────────┐  ┌──────────────┐  ┌─────────┐  ┌───────────┐ │
-│  │ Flow    │  │ GPU Waterfall │  │ Map     │  │ Decoder   │ │
-│  │ Editor  │  │ (WebGPU)     │  │ View    │  │ Panels    │ │
-│  └────┬────┘  └──────┬───────┘  └────┬────┘  └─────┬─────┘ │
-│       │              │               │              │        │
-│  ┌────┴──────────────┴───────────────┴──────────────┴────┐  │
-│  │              Flow Engine (Client-side DSP)             │  │
-│  │  SDR Source → Filter → Demod → Decoder → Display      │  │
-│  └────────────────────────┬──────────────────────────────┘  │
-│                           │ WebSocket / WebUSB               │
-└───────────────────────────┼──────────────────────────────────┘
-                            │
-┌───────────────────────────┼──────────────────────────────────┐
-│                    SignalForge Server                         │
-│                                                               │
-│  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌───────────┐ │
-│  │ SDR      │  │ Satellite │  │ IQ         │  │ Session   │ │
-│  │ Bridge   │  │ Tracker   │  │ Streaming  │  │ Manager   │ │
-│  └──────────┘  └──────────┘  └────────────┘  └───────────┘ │
-│       │                                                       │
-│  ┌────┴─────────────────────────────────────────────────┐    │
-│  │           Hardware Abstraction Layer                   │    │
-│  │   RTL-SDR │ Airspy │ HackRF │ USRP │ LimeSDR        │    │
-│  └──────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    Browser (Client)                       │
+│  ┌──────────┐ ┌──────────┐ ┌─────────┐ ┌─────────────┐ │
+│  │Flow Editor│ │Waterfall │ │3D Globe │ │ Dashboard   │ │
+│  │(Canvas)  │ │(Canvas)  │ │(Globe.gl)│ │(React)      │ │
+│  └────┬─────┘ └────┬─────┘ └────┬────┘ └──────┬──────┘ │
+│       └─────────────┴────────────┴─────────────┘        │
+│                        │ WebSocket                        │
+└────────────────────────┼─────────────────────────────────┘
+                         │
+┌────────────────────────┼─────────────────────────────────┐
+│                   Server (Node.js)                        │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐ │
+│  │SDR Bridge│ │Satellite │ │Decoders  │ │ MCP Server │ │
+│  │(rtl_tcp, │ │(SGP4,    │ │(ADS-B,   │ │(41 tools)  │ │
+│  │ SoapySDR)│ │ SatNOGS) │ │ ACARS..) │ │            │ │
+│  └──────────┘ └──────────┘ └──────────┘ └────────────┘ │
+└──────────────────────────────────────────────────────────┘
+                         │
+┌────────────────────────┼─────────────────────────────────┐
+│                   Edge Nodes (Pi)                         │
+│  RTL-SDR → IQ Stream    GPS → Location    Hailo-8 → AI  │
+└──────────────────────────────────────────────────────────┘
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design.
+**Stack:** TypeScript throughout · React 19 · Vite · Express · WebSocket · Turborepo monorepo
 
 ---
 
@@ -156,27 +211,14 @@ open http://localhost:5180
 ```
 signalforge/
 ├── packages/
-│   ├── client/          # React + WebGPU frontend
-│   │   ├── src/
-│   │   │   ├── components/    # UI components
-│   │   │   ├── engine/        # Flow engine & node types
-│   │   │   ├── gpu/           # WebGPU shaders & renderers
-│   │   │   ├── nodes/         # Flowgraph node implementations
-│   │   │   └── views/         # Main application views
-│   │   └── index.html
-│   ├── server/          # Node.js backend
-│   │   └── src/
-│   │       ├── sdr/           # SDR hardware bridge
-│   │       ├── satellite/     # Orbital mechanics
-│   │       └── streaming/     # WebSocket IQ streaming
-│   └── shared/          # Shared TypeScript types
-│       └── src/
-│           ├── flow.ts        # Flow graph types
-│           ├── sdr.ts         # SDR types
-│           └── satellite.ts   # Satellite types
-├── docs/                # Documentation & assets
-├── package.json         # Monorepo root
-└── turbo.json          # Turborepo config
+│   ├── client/          # React 19 + Vite frontend
+│   ├── server/          # Express + WebSocket backend
+│   ├── shared/          # Shared TypeScript types
+│   ├── edge-node/       # Raspberry Pi edge package
+│   └── mcp-server/      # MCP server (41 tools)
+├── docs/                # Documentation, screenshots, logo
+├── turbo.json           # Turborepo config
+└── package.json         # Monorepo root
 ```
 
 ---
@@ -190,68 +232,48 @@ The heart of SignalForge. Every radio operation is a visual pipeline:
 │ RTL-SDR  ├───→│ Filter ├───→│ FM Demod ├───→│ Audio   ├───→│ Speaker  │
 │ Source   │    │ BPF    │    │          │    │ Resamp  │    │ Output   │
 └──────────┘    └────────┘    └──────────┘    └─────────┘    └──────────┘
-                                   │
-                              ┌────┴─────┐
-                              │ Waterfall│
-                              │ Display  │
-                              └──────────┘
 ```
 
-Nodes snap together. Data flows left-to-right. Every parameter is tweakable in real-time.
+25+ node types. Drag from palette, wire together, tweak parameters in real-time.
 
 ---
 
-## Acknowledgements
+## MCP Server
 
-SignalForge stands on the shoulders of two outstanding projects that directly inspired its architecture and vision:
+SignalForge exposes its full API as an MCP (Model Context Protocol) server with **41 tools**, enabling AI agents to control the radio platform programmatically.
 
-### 🛰️ [Ground Station](https://github.com/sgoudelis/ground-station) by sgoudelis
+```bash
+# Start MCP server
+cd packages/mcp-server && npm start
+```
 
-An exceptionally comprehensive satellite monitoring suite featuring multi-SDR support via SoapySDR, real-time satellite tracking with SGP4/Skyfield, automated observation scheduling, a rich waterfall display with VFO markers, and a full DSP pipeline with 16+ demodulators and decoders. Ground Station's approach to TLE synchronisation, pass prediction, Doppler correction, telemetry parsing (AX.25/CCSDS/CSP), and its handler-based Socket.IO architecture were a direct inspiration for SignalForge's satellite tracking, SDR integration, and observation concepts. If you need a production-grade Python-based ground station today, [go use it](https://github.com/sgoudelis/ground-station) — it's remarkable.
-
-### ⚡ [CyberEther](https://github.com/luigifcruz/CyberEther)
-
-A pioneering browser-based, GPU-accelerated signal processing engine that proved the viability of WebGPU for real-time radio DSP in the browser. CyberEther's flow-based visual pipeline architecture — where signal processing blocks are wired together as a directed graph with GPU-accelerated rendering — is the foundational concept behind SignalForge's flow editor and our roadmap for client-side WebGPU DSP. The idea that a waterfall display could run at 60fps+ in a browser via compute shaders came directly from this project.
-
----
-
-Both projects demonstrated that the future of software-defined radio is open, visual, and browser-native. SignalForge aims to build on their pioneering work by combining satellite tracking, multi-protocol decoding, and GPU-accelerated visualisation into a unified TypeScript platform.
+Categories: SDR control, satellite tracking, decoder management, scanning, flowgraph, recordings, logbook, alerts, propagation, edge nodes, IoT, TSCM, system health.
 
 ---
 
----
-
-## 🙏 Acknowledgements / Inspired By
+## 🙏 Acknowledgements
 
 SignalForge stands on the shoulders of these excellent projects:
 
 ### [Ground Station](https://github.com/sgoudelis/ground-station) by sgoudelis
-A remarkably complete satellite monitoring suite — SDR abstraction, multi-VFO DSP, automated observation scheduling, weather satellite decoding, telemetry parsing. Directly inspired SignalForge's satellite tracking, SDR integration, and observation scheduling architecture. If you need a production-ready Python-based ground station, check it out.
+A remarkably complete satellite monitoring suite — SDR abstraction, multi-VFO DSP, automated observation scheduling, weather satellite decoding, telemetry parsing. Directly inspired SignalForge's satellite tracking, SDR integration, and observation scheduling. If you need a production-ready Python-based ground station today, go use it.
 
-### [CyberEther](https://github.com/aspect-build/cyberether)
-Browser-based GPU-accelerated flowgraph engine. Inspired the flow-based visual pipeline architecture and the vision for WebGPU-accelerated signal processing in the browser. The idea that DSP pipelines should be visual and interactive came from studying CyberEther's approach.
-
-### [CelesTrak](https://celestrak.org)
-Dr. T.S. Kelso's satellite tracking data service — the essential source for TLE orbital data that makes satellite pass prediction possible.
-
-### [OpenStreetMap](https://www.openstreetmap.org) / [Nominatim](https://nominatim.openstreetmap.org)
-Open geocoding service used for the place-name search in the observer location system. No API key needed, free for everyone.
-
-### [WebSDR](http://websdr.org)
-Pieter-Tjerk de Boer's network of publicly accessible software-defined radio receivers. The WebSDR integration lets users explore radio worldwide without owning hardware.
+### [CyberEther](https://github.com/luigifcruz/CyberEther) by Luigi Cruz
+Browser-based GPU-accelerated flowgraph engine. The foundational inspiration for SignalForge's visual pipeline architecture and the vision for WebGPU-accelerated signal processing. The idea that DSP pipelines should be visual and interactive came from studying CyberEther.
 
 ### [INTERCEPT](https://github.com/smittix/intercept) by smittix
-A Python-based SIGINT platform that inspired Phase 7's feature absorption — rtl_433 IoT decoding, POCSAG/FLEX pager decoding, sub-GHz analysis, SSTV decoding, WiFi/Bluetooth scanning, TSCM counter-surveillance, Meshtastic integration, number stations database, and field/offline mode. INTERCEPT demonstrated the breadth of capabilities a modern SIGINT platform should cover.
+A Python-based SIGINT platform that inspired Phase 7's feature set — rtl_433 IoT, POCSAG/FLEX, sub-GHz analysis, SSTV, WiFi/Bluetooth scanning, TSCM counter-surveillance, Meshtastic, number stations, and field mode. INTERCEPT demonstrated the breadth a modern SIGINT platform should cover.
 
 ### [Aaronia AG](https://www.aaronia.com)
-Industry-leading spectrum analyzers and EMC test equipment. The Spectran V6 series provides professional-grade RF analysis with up to 245MHz real-time bandwidth. SignalForge integrates with Aaronia's RTSA-Suite PRO HTTP API for remote spectrum analysis, TSCM counter-surveillance sweeps, and EMC pre-compliance testing.
+Professional spectrum analyzers and EMC test equipment. SignalForge integrates with the RTSA-Suite PRO HTTP API for remote spectrum analysis and TSCM sweeps.
 
-### Key Libraries
-- **[satellite.js](https://github.com/shashwatak/satellite-js)** — SGP4/SDP4 satellite propagation in JavaScript
-- **[React](https://react.dev)** — UI framework
-- **[Vite](https://vitejs.dev)** — Build tooling
-- **[Express](https://expressjs.com)** — HTTP server
-- **[Turborepo](https://turbo.build)** — Monorepo build system
+### Data Sources & Libraries
+- **[CelesTrak](https://celestrak.org)** — TLE orbital data by Dr. T.S. Kelso
+- **[OpenStreetMap](https://www.openstreetmap.org) / [Nominatim](https://nominatim.openstreetmap.org)** — Open geocoding
+- **[WebSDR](http://websdr.org)** — Public SDR receivers by Pieter-Tjerk de Boer
+- **[satellite.js](https://github.com/shashwatak/satellite-js)** — SGP4/SDP4 propagation
+- **[Globe.gl](https://globe.gl)** — 3D globe visualization
+- **[React](https://react.dev)** · **[Vite](https://vitejs.dev)** · **[Express](https://expressjs.com)** · **[Turborepo](https://turbo.build)**
 
 ---
 
