@@ -43,8 +43,8 @@ export const MapView: React.FC = () => {
   const [aprsStations, setAprsStations] = useState<APRSStation[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState(() => { const w = window.innerWidth; const h = window.innerHeight; const initZoom = 4; return { x: w/2 - ((-4.63 + 180) / 360) * w * initZoom, y: h/2 - ((90 - 55.46) / 180) * h * initZoom }; });
+  const [zoom, setZoom] = useState(4);
   const dragRef = useRef<{ dragging: boolean; startX: number; startY: number; panX: number; panY: number }>({ dragging: false, startX: 0, startY: 0, panX: 0, panY: 0 });
 
   // Fetch data
@@ -64,7 +64,7 @@ export const MapView: React.FC = () => {
       } catch { /* retry next interval */ }
     };
     fetchAll();
-    const interval = setInterval(fetchAll, 3000);
+    const interval = setInterval(fetchAll, 10000);
     return () => clearInterval(interval);
   }, [searchQuery]);
 
@@ -373,7 +373,17 @@ export const MapView: React.FC = () => {
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const factor = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(z => Math.max(0.5, Math.min(8, z * factor)));
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const newZoom = Math.max(0.3, Math.min(64, zoom * factor));
+    const scale = newZoom / zoom;
+    setPan(p => ({
+      x: mx - scale * (mx - p.x),
+      y: my - scale * (my - p.y),
+    }));
+    setZoom(newZoom);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -443,9 +453,9 @@ export const MapView: React.FC = () => {
 
       {/* Zoom controls */}
       <div className="absolute bottom-3 right-3 flex flex-col gap-1 z-10">
-        <button onClick={() => setZoom(z => Math.min(8, z * 1.3))} className="w-7 h-7 bg-forge-bg/90 border border-forge-border rounded text-forge-text-dim hover:text-forge-text text-xs">+</button>
-        <button onClick={() => setZoom(z => Math.max(0.5, z / 1.3))} className="w-7 h-7 bg-forge-bg/90 border border-forge-border rounded text-forge-text-dim hover:text-forge-text text-xs">−</button>
-        <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="w-7 h-7 bg-forge-bg/90 border border-forge-border rounded text-forge-text-dim hover:text-forge-text text-[9px]">⌂</button>
+        <button onClick={() => { const rect = canvasRef.current?.getBoundingClientRect(); if (!rect) return; const cx = rect.width/2; const cy = rect.height/2; const newZ = Math.min(64, zoom * 1.3); const s = newZ/zoom; setPan(p => ({ x: cx - s*(cx-p.x), y: cy - s*(cy-p.y) })); setZoom(newZ); }} className="w-7 h-7 bg-forge-bg/90 border border-forge-border rounded text-forge-text-dim hover:text-forge-text text-xs">+</button>
+        <button onClick={() => { const rect = canvasRef.current?.getBoundingClientRect(); if (!rect) return; const cx = rect.width/2; const cy = rect.height/2; const newZ = Math.max(0.3, zoom / 1.3); const s = newZ/zoom; setPan(p => ({ x: cx - s*(cx-p.x), y: cy - s*(cy-p.y) })); setZoom(newZ); }} className="w-7 h-7 bg-forge-bg/90 border border-forge-border rounded text-forge-text-dim hover:text-forge-text text-xs">−</button>
+        <button onClick={() => { const rect = canvasRef.current?.getBoundingClientRect(); if (!rect) return; const w = rect.width; const h = rect.height; setZoom(4); setPan({ x: w/2 - ((-4.63+180)/360)*w*4, y: h/2 - ((90-55.46)/180)*h*4 }); }} className="w-7 h-7 bg-forge-bg/90 border border-forge-border rounded text-forge-text-dim hover:text-forge-text text-[9px]">⌂</button>
       </div>
     </div>
   );

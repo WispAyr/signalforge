@@ -5,7 +5,7 @@ import type { APRSPacket, APRSStation } from '@signalforge/shared';
 const APRS_HOST = 'rotate.aprs2.net';
 const APRS_PORT = 14580;
 const APRS_LOGIN = 'user SFORG-1 pass -1 vers SignalForge 0.10 filter r/55.46/-4.63/500';
-const MAX_STATIONS = 500;
+const MAX_STATIONS = 2000;
 const EXPIRE_MS = 2 * 3600000; // 2 hours
 const RECONNECT_DELAY = 30000;
 

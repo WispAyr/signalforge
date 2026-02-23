@@ -25,6 +25,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: 'timeline', label: 'Timeline', icon: '📜' },
       { id: 'analytics', label: 'Analytics', icon: '📊' },
       { id: 'telemetry', label: 'Telemetry', icon: '🛰️' },
+      { id: 'rules', label: 'Rules Engine', icon: '⚡' },
+      { id: 'dataflow', label: 'Data Flow', icon: '🔀' },
     ],
   },
   {
@@ -62,6 +64,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: 'sstv', label: 'SSTV', icon: '📺' },
       { id: 'meters', label: 'Meters', icon: '🔌' },
       { id: 'vdl2', label: 'VDL2/ACARS', icon: '✈️' },
+      { id: 'aprs', label: 'APRS', icon: '📍' },
       { id: 'meshtastic', label: 'Meshtastic', icon: '📡' },
     ],
   },

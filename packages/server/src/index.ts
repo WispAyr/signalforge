@@ -59,6 +59,10 @@ import { AaroniaService } from './services/aaronia.js';
 import { WebSDRService } from './sdr/websdr.js';
 import { TimeMachineService } from './timemachine/service.js';
 import { SettingsService } from './services/settings.js';
+// Rules engine
+import { RulesEngine } from './rules/engine.js';
+import { createRulesRouter } from './rules/api.js';
+import { createDataFlowRouter } from './rules/dataflow-api.js';
 import type { DashboardStats, ActivityFeedItem, IntegrationType } from '@signalforge/shared';
 
 const PORT = parseInt(process.env.PORT || '3401');
@@ -154,6 +158,16 @@ const webSDRService = new WebSDRService();
 const timeMachineService = new TimeMachineService();
 const settingsService = new SettingsService();
 
+// Rules engine — evaluates all decoder events against user-defined rules
+const rulesEngine = new RulesEngine(
+  broadcast,
+  (topic: string, payload: string) => { if (mqttClient.getConfig().connected) mqttClient.publish(topic, payload); },
+  (zoneId: string, entityId: string) => {
+    const pos = (geofenceService as any).entityPositions?.get(entityId);
+    if (!pos) return 'unknown';
+    return pos.inside?.has(zoneId) ? 'inside' : 'outside';
+  }
+);
 const locationService = new LocationService();
 locationService.start();
 
@@ -464,6 +478,13 @@ aprsDecoder.on('message', (pkt) => {
   }
 });
 
+// Wire all decoder events into the rules engine
+adsbDecoder.on('message', (msg) => rulesEngine.evaluate('adsb', msg.icao || msg.callsign || 'unknown', msg));
+acarsDecoder.on('message', (msg) => rulesEngine.evaluate('acars', msg.flightNumber || 'unknown', msg));
+aisDecoder.on('message', (msg) => rulesEngine.evaluate('ais', String(msg.mmsi || 'unknown'), msg));
+aprsDecoder.on('message', (pkt) => rulesEngine.evaluate('aprs', pkt.source || 'unknown', pkt));
+rtl433Service.on('device_update', (d) => rulesEngine.evaluate('rtl433', d.id || d.model || 'unknown', d));
+meshtasticService.on('message', (m) => rulesEngine.evaluate('meshtastic', m.from || 'unknown', m));
 function broadcast(data: unknown) {
   const msg = JSON.stringify(data);
   wss.clients.forEach((client) => {
@@ -568,6 +589,9 @@ const openApiSpec = {
 // REST endpoints
 // ============================================================================
 
+// Rules & Data Flow routes
+app.use('/api', createRulesRouter(rulesEngine));
+app.use('/api', createDataFlowRouter());
 app.get('/api/health', (_req, res) => {
   const memUsage = process.memoryUsage();
   const components = [
