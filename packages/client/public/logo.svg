@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0f1a"/>
+      <stop offset="100%" style="stop-color:#0d1520"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00f0ff"/>
+      <stop offset="100%" style="stop-color:#f0a030"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00f0ff;stop-opacity:0.8"/>
+      <stop offset="50%" style="stop-color:#00f0ff;stop-opacity:0.2"/>
+      <stop offset="100%" style="stop-color:#f0a030;stop-opacity:0.8"/>
+    </linearGradient>
+    <linearGradient id="wave1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00f0ff;stop-opacity:0.6"/>
+      <stop offset="100%" style="stop-color:#00f0ff;stop-opacity:0"/>
+    </linearGradient>
+    <linearGradient id="wave2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f0a030;stop-opacity:0"/>
+      <stop offset="100%" style="stop-color:#f0a030;stop-opacity:0.6"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softglow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="250" fill="url(#bg)" stroke="url(#ring)" stroke-width="3"/>
+  
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="230" fill="none" stroke="url(#ring)" stroke-width="1.5" opacity="0.4"/>
+  
+  <!-- Signal waves - left (cyan) -->
+  <path d="M 100 256 Q 100 180, 140 180" fill="none" stroke="url(#wave1)" stroke-width="3" stroke-linecap="round" filter="url(#softglow)"/>
+  <path d="M 80 256 Q 80 150, 130 150" fill="none" stroke="url(#wave1)" stroke-width="2.5" stroke-linecap="round" opacity="0.6" filter="url(#softglow)"/>
+  <path d="M 60 256 Q 60 120, 120 120" fill="none" stroke="url(#wave1)" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  
+  <!-- Signal waves - left bottom (cyan) -->
+  <path d="M 100 256 Q 100 332, 140 332" fill="none" stroke="url(#wave1)" stroke-width="3" stroke-linecap="round" filter="url(#softglow)"/>
+  <path d="M 80 256 Q 80 362, 130 362" fill="none" stroke="url(#wave1)" stroke-width="2.5" stroke-linecap="round" opacity="0.6" filter="url(#softglow)"/>
+  <path d="M 60 256 Q 60 392, 120 392" fill="none" stroke="url(#wave1)" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  
+  <!-- Signal waves - right (amber) -->
+  <path d="M 412 256 Q 412 180, 372 180" fill="none" stroke="url(#wave2)" stroke-width="3" stroke-linecap="round" filter="url(#softglow)"/>
+  <path d="M 432 256 Q 432 150, 382 150" fill="none" stroke="url(#wave2)" stroke-width="2.5" stroke-linecap="round" opacity="0.6" filter="url(#softglow)"/>
+  <path d="M 452 256 Q 452 120, 392 120" fill="none" stroke="url(#wave2)" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  
+  <!-- Signal waves - right bottom (amber) -->
+  <path d="M 412 256 Q 412 332, 372 332" fill="none" stroke="url(#wave2)" stroke-width="3" stroke-linecap="round" filter="url(#softglow)"/>
+  <path d="M 432 256 Q 432 362, 382 362" fill="none" stroke="url(#wave2)" stroke-width="2.5" stroke-linecap="round" opacity="0.6" filter="url(#softglow)"/>
+  <path d="M 452 256 Q 452 392, 392 392" fill="none" stroke="url(#wave2)" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  
+  <!-- Lightning bolt (center) -->
+  <path d="M 280 120 L 230 240 L 275 240 L 232 392 L 320 230 L 270 230 Z" 
+        fill="url(#bolt)" filter="url(#glow)"/>
+  
+  <!-- Grid dots (subtle) -->
+  <g opacity="0.15" fill="#00f0ff">
+    <circle cx="170" cy="200" r="2"/>
+    <circle cx="200" cy="170" r="2"/>
+    <circle cx="342" cy="200" r="2"/>
+    <circle cx="312" cy="170" r="2"/>
+    <circle cx="170" cy="312" r="2"/>
+    <circle cx="200" cy="342" r="2"/>
+    <circle cx="342" cy="312" r="2"/>
+    <circle cx="312" cy="342" r="2"/>
+  </g>
+</svg>

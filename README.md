@@ -3,7 +3,7 @@
 **Universal Radio Platform** — Browser-based, GPU-accelerated, flow-based signal processing for every band, every mode, every protocol.
 
 <p align="center">
-  <img src="docs/assets/signalforge-banner.svg" alt="SignalForge" width="800"/>
+  <img src="docs/logo.svg" alt="SignalForge" width="200"/>
 </p>
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -28,6 +28,40 @@ SignalForge is a **visual, node-based radio signal processing platform** that ru
 | 📡 **IoT** | LoRa/Meshtastic packet decoding |
 | ⚡ **Spectrum** | Wideband analysis, signal identification, waterfall display |
 | 🌦️ **Weather** | APT/LRPT satellite image decoding, NOAA/METEOR |
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Operations Dashboard" width="800"/>
+  <br/><em>Operations Dashboard — system overview with live stats</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/flow-editor.png" alt="Flow Editor" width="800"/>
+  <br/><em>Visual Flow Editor — drag-and-drop signal processing chains</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/waterfall.png" alt="Waterfall & Spectrum" width="800"/>
+  <br/><em>Waterfall Display — real-time spectrum analysis</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/map.png" alt="Map View" width="800"/>
+  <br/><em>Map View — satellites, aircraft, vessels, APRS stations</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/satellites.png" alt="Satellite Tracking" width="800"/>
+  <br/><em>Satellite Tracking — pass predictions with Doppler correction</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/scanner.png" alt="Frequency Scanner" width="800"/>
+  <br/><em>Frequency Scanner — sweep, detect, identify</em>
+</p>
+
+---
 
 ### ✨ Key Features
 
