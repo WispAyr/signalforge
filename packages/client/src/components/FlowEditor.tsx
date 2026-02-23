@@ -1,4 +1,5 @@
 import React, { useRef, useCallback, useState, useEffect, useMemo } from 'react';
+import { getFlowRunner } from '../flow/FlowRunner';
 import type { FlowNode, FlowConnection, NodeCategory } from '@signalforge/shared';
 
 // ============================================================================
@@ -162,6 +163,8 @@ const NODE_META: Record<string, { name: string; icon: string; color: string; cat
   recorder: { name: 'Recorder', icon: '⏺️', color: '#6a6a8a', category: 'output' },
   sat_tracker: { name: 'Sat Tracker', icon: '🛰️', color: '#00b8d4', category: 'satellite' },
   doppler: { name: 'Doppler', icon: '🎯', color: '#00b8d4', category: 'satellite' },
+  downconverter: { name: 'Downconverter', icon: '⬇️', color: '#00e676', category: 'filter' },
+  pocsag_decoder: { name: 'POCSAG/FLEX', icon: '📟', color: '#aa00ff', category: 'decoder' },
   gain: { name: 'Gain', icon: '⬆️', color: '#ffffff', category: 'math' },
   mixer: { name: 'Mixer', icon: '✕', color: '#ffffff', category: 'math' },
   resample: { name: 'Resample', icon: '↕️', color: '#ffffff', category: 'math' },
@@ -286,7 +289,48 @@ export const FlowEditor: React.FC = () => {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [showLoadDropdown, setShowLoadDropdown] = useState(false);
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
+  const [flowRunning, setFlowRunning] = useState(false);
   const [flowName, setFlowName] = useState('Untitled Flow');
+  // Background flows
+  const [backgroundFlows, setBackgroundFlows] = useState<any[]>([]);
+  const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
+  const [isBackgroundFlow, setIsBackgroundFlow] = useState(false);
+  const [flowLocked, setFlowLocked] = useState(false);
+  const [showBgDropdown, setShowBgDropdown] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/background-flows').then(r => r.json()).then(setBackgroundFlows).catch(() => {});
+  }, []);
+
+  const loadBackgroundFlow = useCallback((id: string) => {
+    fetch(`/api/background-flows/${id}`).then(r => r.json()).then((flow: any) => {
+      const mapped = (flow.nodes || []).map((n: any) => {
+        const meta = (NODE_META as any)[n.type] || { name: n.type, icon: '?', color: '#888', category: 'source' };
+        return { ...n, name: meta.name, icon: meta.icon, color: meta.color, category: meta.category, width: 160, height: 60 };
+      });
+      setNodes(mapped);
+      setConnections(flow.edges || []);
+      setFlowName(flow.name);
+      setActiveFlowId(flow.id);
+      setIsBackgroundFlow(true);
+      setFlowLocked(flow.locked);
+      setSelectedNodes(new Set());
+      setShowConfig(false);
+      setShowBgDropdown(false);
+      pushHistory(mapped, flow.edges || []);
+    }).catch(() => {});
+  }, [pushHistory]);
+
+  const toggleFlowLock = useCallback(() => {
+    if (!activeFlowId) return;
+    const newLocked = !flowLocked;
+    if (!newLocked && !confirm('⚠️ Unlocking a background flow allows editing. Changes affect live signal processing. Continue?')) return;
+    fetch(`/api/background-flows/${activeFlowId}/lock`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locked: newLocked }),
+    }).then(() => setFlowLocked(newLocked)).catch(() => {});
+  }, [activeFlowId, flowLocked]);
+
   const [hoveredPort, setHoveredPort] = useState<{ nodeId: string; portId: string; portType: string; x: number; y: number } | null>(null);
   const animFrame = useRef<number>(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -677,6 +721,7 @@ export const FlowEditor: React.FC = () => {
   // Mouse handlers
   // ============================================================================
 
+  const editBlocked = flowLocked && isBackgroundFlow;
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 2) return; // right-click handled by context menu
     setContextMenu(null);
@@ -1012,6 +1057,36 @@ export const FlowEditor: React.FC = () => {
           )}
         </div>
 
+        {/* Background Flows */}
+        <div className="relative">
+          <button onClick={() => { setShowBgDropdown(!showBgDropdown); setShowLoadDropdown(false); setShowTemplateDropdown(false); }} className="bg-forge-bg/90 border border-amber-500/40 px-2.5 py-1.5 rounded text-[10px] font-mono text-amber-400 hover:text-amber-300 hover:border-amber-400/60 transition-all">
+            ⚡ Background ▾
+          </button>
+          {showBgDropdown && (
+            <div className="absolute top-full right-0 mt-1 w-64 bg-forge-bg border border-amber-500/30 rounded-lg shadow-xl overflow-hidden">
+              {backgroundFlows.length === 0 ? (
+                <div className="px-3 py-2 text-[10px] font-mono text-forge-text-dim">No background flows</div>
+              ) : backgroundFlows.map((f: any) => (
+                <button key={f.id} onClick={() => loadBackgroundFlow(f.id)} className="w-full text-left px-3 py-2 text-[10px] font-mono text-forge-text-dim hover:bg-amber-500/10 hover:text-amber-300 transition-all flex items-center gap-2">
+                  <span>{f.icon}</span>
+                  <span className="flex-1">{f.name}</span>
+                  <span className={`text-[8px] px-1.5 py-0.5 rounded ${f.status === 'running' ? 'bg-green-500/20 text-green-400' : f.status === 'error' ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}`}>
+                    {f.status || 'stopped'}
+                  </span>
+                  {f.locked && <span className="text-[8px]">🔒</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Lock toggle for background flows */}
+        {isBackgroundFlow && (
+          <button onClick={toggleFlowLock} className={`bg-forge-bg/90 border px-2.5 py-1.5 rounded text-[10px] font-mono transition-all ${flowLocked ? 'border-amber-500/40 text-amber-400 hover:text-amber-300' : 'border-red-500/40 text-red-400 hover:text-red-300'}`}>
+            {flowLocked ? '🔒 Locked' : '🔓 Unlocked'}
+          </button>
+        )}
+
         {/* Zoom controls */}
         <div className="flex items-center gap-0.5">
           <button onClick={() => setZoom(z => Math.max(0.2, z * 0.8))} className="bg-forge-bg/90 border border-forge-border px-2 py-1.5 rounded-l text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan transition-all">−</button>
@@ -1027,11 +1102,22 @@ export const FlowEditor: React.FC = () => {
 
       {/* Flow name */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
-        <input
-          value={flowName}
-          onChange={e => setFlowName(e.target.value)}
-          className="bg-transparent text-center text-xs font-mono text-forge-text-dim border-b border-transparent hover:border-forge-border focus:border-forge-cyan focus:text-forge-text outline-none px-4 py-1 transition-all"
-        />
+        <div className="flex items-center gap-2">
+          {isBackgroundFlow && (
+            <span className="bg-amber-500/20 text-amber-400 text-[8px] font-mono px-1.5 py-0.5 rounded border border-amber-500/30">BG</span>
+          )}
+          <input
+            value={flowName}
+            onChange={e => !flowLocked && setFlowName(e.target.value)}
+            readOnly={flowLocked}
+            className={`bg-transparent text-center text-xs font-mono border-b border-transparent outline-none px-4 py-1 transition-all ${flowLocked ? 'text-forge-text-dim/50 cursor-not-allowed' : 'text-forge-text-dim hover:border-forge-border focus:border-forge-cyan focus:text-forge-text'}`}
+          />
+          {isBackgroundFlow && (
+            <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${flowLocked ? 'bg-amber-500/10 text-amber-500/60' : 'bg-red-500/10 text-red-400'}`}>
+              {flowLocked ? 'READ-ONLY' : 'EDITING'}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* ── Context Menu ── */}
@@ -1105,6 +1191,37 @@ export const FlowEditor: React.FC = () => {
           </button>
         </div>
       )}
+
+      {/* Flow execution controls */}
+      <div className="absolute top-3 right-3 z-10 flex gap-2">
+        {!flowRunning ? (
+          <button
+            onClick={() => {
+              const runner = getFlowRunner();
+              runner.load(
+                nodes.map(n => ({ id: n.id, type: n.type, params: n.params || {} })),
+                connections.map(c => ({ id: c.id, from: c.from, fromPort: c.fromPort, to: c.to, toPort: c.toPort }))
+              );
+              runner.start();
+              setFlowRunning(true);
+            }}
+            className="px-3 py-1.5 rounded bg-green-600 hover:bg-green-500 text-white text-xs font-mono transition-colors flex items-center gap-1"
+          >
+            \u25b6 Run Flow
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              getFlowRunner().stop();
+              setFlowRunning(false);
+            }}
+            className="px-3 py-1.5 rounded bg-red-600 hover:bg-red-500 text-white text-xs font-mono transition-colors flex items-center gap-1"
+          >
+            \u23f9 Stop
+          </button>
+        )}
+        <div className={"w-2 h-2 rounded-full self-center " + (flowRunning ? "bg-green-500 animate-pulse" : "bg-forge-border")} />
+      </div>
 
       {/* Keyboard shortcuts hint */}
       <div className="absolute bottom-3 left-3 text-[8px] font-mono text-forge-text-dim/30 z-10 space-x-3">

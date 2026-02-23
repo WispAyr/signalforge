@@ -3,6 +3,72 @@ import { COLORMAPS } from '@signalforge/shared';
 import type { ColormapName } from '@signalforge/shared';
 import { PopOutButton } from './ui/PopOutButton';
 
+// ── Blackman-Harris window ──
+function blackmanHarris(N: number): Float32Array {
+  const w = new Float32Array(N);
+  const a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168;
+  for (let i = 0; i < N; i++) {
+    const x = (2 * Math.PI * i) / (N - 1);
+    w[i] = a0 - a1 * Math.cos(x) + a2 * Math.cos(2 * x) - a3 * Math.cos(3 * x);
+  }
+  return w;
+}
+
+// ── Radix-2 DIT FFT (in-place) ──
+function fftInPlace(re: Float32Array, im: Float32Array) {
+  const N = re.length;
+  // bit-reversal
+  for (let i = 1, j = 0; i < N; i++) {
+    let bit = N >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      let tmp = re[i]; re[i] = re[j]; re[j] = tmp;
+      tmp = im[i]; im[i] = im[j]; im[j] = tmp;
+    }
+  }
+  // butterfly
+  for (let len = 2; len <= N; len <<= 1) {
+    const half = len >> 1;
+    const angle = -2 * Math.PI / len;
+    const wRe = Math.cos(angle), wIm = Math.sin(angle);
+    for (let i = 0; i < N; i += len) {
+      let curRe = 1, curIm = 0;
+      for (let j = 0; j < half; j++) {
+        const a = i + j, b = a + half;
+        const tRe = curRe * re[b] - curIm * im[b];
+        const tIm = curRe * im[b] + curIm * re[b];
+        re[b] = re[a] - tRe; im[b] = im[a] - tIm;
+        re[a] += tRe; im[a] += tIm;
+        const nRe = curRe * wRe - curIm * wIm;
+        curIm = curRe * wIm + curIm * wRe;
+        curRe = nRe;
+      }
+    }
+  }
+}
+
+// ── IQ → power spectrum in dB ──
+function iqToPowerDb(iq: Float32Array, fftSize: number, window: Float32Array): Float32Array {
+  const offset = iq.length > fftSize * 2 ? iq.length - fftSize * 2 : 0;
+  const re = new Float32Array(fftSize);
+  const im = new Float32Array(fftSize);
+  for (let i = 0; i < fftSize; i++) {
+    re[i] = iq[offset + i * 2] * window[i];
+    im[i] = iq[offset + i * 2 + 1] * window[i];
+  }
+  fftInPlace(re, im);
+  // fftshift + power in dB
+  const out = new Float32Array(fftSize);
+  const half = fftSize >> 1;
+  for (let i = 0; i < fftSize; i++) {
+    const j = (i + half) % fftSize;
+    const pwr = re[j] * re[j] + im[j] * im[j];
+    out[i] = 10 * Math.log10(pwr + 1e-20);
+  }
+  return out;
+}
+
 export const WaterfallView: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const spectrumRef = useRef<HTMLCanvasElement>(null);
@@ -17,51 +83,82 @@ export const WaterfallView: React.FC = () => {
   const [bandwidth, setBandwidth] = useState(2.4e6);
   const [showSettings, setShowSettings] = useState(false);
 
+  // SDR state
+  const [sdrConnected, setSdrConnected] = useState(false);
+  const [sdrFreqInput, setSdrFreqInput] = useState('100.0');
+  const [sdrGain, setSdrGain] = useState(40);
+  const wsRef = useRef<WebSocket | null>(null);
+  const latestFftRef = useRef<Float32Array | null>(null);
+  const windowRef = useRef<Float32Array>(blackmanHarris(2048));
+
+  // Update window when fftSize changes
+  useEffect(() => {
+    windowRef.current = blackmanHarris(fftSize);
+  }, [fftSize]);
+
+  // WebSocket connection for real IQ data
+  useEffect(() => {
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${window.location.host}/ws`);
+    ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
+
+    ws.onopen = () => {};
+    ws.onclose = () => { setSdrConnected(false); latestFftRef.current = null; };
+    ws.onerror = () => { setSdrConnected(false); };
+
+    ws.onmessage = (e) => {
+      if (e.data instanceof ArrayBuffer) {
+        const iq = new Float32Array(e.data);
+        if (iq.length >= fftSize * 2) {
+          latestFftRef.current = iqToPowerDb(iq, fftSize, windowRef.current);
+          setSdrConnected(true);
+        }
+      } else {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'iq_meta') {
+            if (msg.sampleRate) setBandwidth(msg.sampleRate);
+            if (msg.centerFrequency) {
+              setCenterFreq(msg.centerFrequency);
+              setSdrFreqInput((msg.centerFrequency / 1e6).toFixed(3));
+            }
+            setSdrConnected(true);
+          }
+        } catch {}
+      }
+    };
+
+    return () => { ws.close(); wsRef.current = null; };
+  }, [fftSize]);
+
   // Generate demo FFT data with more realistic signals
   const generateDemoFFT = useCallback((): Float32Array => {
     const data = new Float32Array(fftSize);
     const time = Date.now() / 1000;
-
     for (let i = 0; i < fftSize; i++) {
       const freq = i / fftSize;
-      // Noise floor with slight slope
       data[i] = -100 + Math.random() * 6 + (freq - 0.5) * 4;
-
-      // Strong FM broadcast stations
       const fm1 = Math.exp(-Math.pow((freq - 0.25) * 80, 2));
       data[i] += fm1 * (42 + 3 * Math.sin(time * 0.3));
-
       const fm2 = Math.exp(-Math.pow((freq - 0.33) * 90, 2));
       data[i] += fm2 * (38 + 4 * Math.sin(time * 0.4 + 1));
-
       const fm3 = Math.exp(-Math.pow((freq - 0.48) * 85, 2));
       data[i] += fm3 * (35 + 5 * Math.sin(time * 0.5 + 2));
-
-      // Narrowband digital signal
       const nb1 = Math.exp(-Math.pow((freq - 0.55) * 300, 2));
       data[i] += nb1 * (25 + Math.random() * 8);
-
-      // Pulsing beacon
       const beacon = Math.exp(-Math.pow((freq - 0.65) * 400, 2));
       data[i] += beacon * (30 * Math.max(0, Math.sin(time * 3)));
-
-      // Wideband spread spectrum
       if (freq > 0.72 && freq < 0.78) {
         data[i] += (8 + Math.random() * 6) * (0.5 + 0.5 * Math.sin(time * 0.2));
       }
-
-      // Sweeping signal
       const sweepPos = 0.15 + 0.08 * Math.sin(time * 0.4);
       const sweep = Math.exp(-Math.pow((freq - sweepPos) * 250, 2));
       data[i] += sweep * 20;
-
-      // Intermittent burst
       if (Math.sin(time * 0.8 + 3) > 0.7) {
         const burst = Math.exp(-Math.pow((freq - 0.85) * 150, 2));
         data[i] += burst * 28;
       }
-
-      // Harmonic comb (like digital TV)
       for (let h = 0; h < 5; h++) {
         const hp = 0.38 + h * 0.012;
         const harm = Math.exp(-Math.pow((freq - hp) * 500, 2));
@@ -93,7 +190,6 @@ export const WaterfallView: React.FC = () => {
     return `${hz.toFixed(0)} Hz`;
   };
 
-  // Click to tune
   const handleWaterfallClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = e.currentTarget;
     const rect = canvas.getBoundingClientRect();
@@ -101,6 +197,37 @@ export const WaterfallView: React.FC = () => {
     const freqOffset = (x - 0.5) * bandwidth;
     setCenterFreq(prev => prev + freqOffset);
   }, [bandwidth]);
+
+  // SDR API helpers
+  const connectSdr = async () => {
+    try {
+      await fetch('/api/sdr/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host: '127.0.0.1', port: 1234 }),
+      });
+    } catch {}
+  };
+
+  const tuneFrequency = async (mhz: number) => {
+    try {
+      await fetch('/api/sdr/frequency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frequency: mhz * 1e6 }),
+      });
+    } catch {}
+  };
+
+  const setGain = async (gain: number) => {
+    try {
+      await fetch('/api/sdr/gain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gain }),
+      });
+    } catch {}
+  };
 
   const render = useCallback(() => {
     const canvas = canvasRef.current;
@@ -128,7 +255,11 @@ export const WaterfallView: React.FC = () => {
     canvas.style.width = `${rect.width}px`;
     canvas.style.height = `${wfHeight}px`;
 
-    const fftData = generateDemoFFT();
+    // Use real FFT data if available, else demo
+    const fftData = latestFftRef.current; if (!fftData) return;
+    // Consume real data so we don't re-use stale frames
+    if (latestFftRef.current) latestFftRef.current = null;
+
     fftHistory.current.unshift(fftData);
     if (fftHistory.current.length > wfHeight) fftHistory.current.pop();
 
@@ -150,7 +281,6 @@ export const WaterfallView: React.FC = () => {
     }
     ctx.putImageData(imgData, 0, 0);
 
-    // dB scale on left
     ctx.fillStyle = 'rgba(6, 6, 16, 0.7)';
     ctx.fillRect(0, 0, 40, wfHeight);
     for (let db = minDb; db <= maxDb; db += 10) {
@@ -167,7 +297,6 @@ export const WaterfallView: React.FC = () => {
     specCtx.fillStyle = '#060610';
     specCtx.fillRect(0, 0, rect.width, specHeight);
 
-    // Horizontal grid + dB labels
     for (let db = minDb; db <= maxDb; db += 10) {
       const y = specHeight - ((db - minDb) / (maxDb - minDb)) * specHeight;
       specCtx.strokeStyle = 'rgba(0, 229, 255, 0.06)';
@@ -178,7 +307,6 @@ export const WaterfallView: React.FC = () => {
       specCtx.fillText(`${db}`, 4, y - 2);
     }
 
-    // Vertical grid + freq labels
     const freqStep = bandwidth / 10;
     for (let i = 0; i <= 10; i++) {
       const x = (i / 10) * rect.width;
@@ -186,7 +314,6 @@ export const WaterfallView: React.FC = () => {
       specCtx.beginPath(); specCtx.moveTo(x, 0); specCtx.lineTo(x, specHeight); specCtx.stroke();
     }
 
-    // Max-hold (average of recent)
     if (fftHistory.current.length > 5) {
       specCtx.beginPath();
       specCtx.strokeStyle = 'rgba(255, 171, 0, 0.3)';
@@ -203,7 +330,6 @@ export const WaterfallView: React.FC = () => {
       specCtx.stroke();
     }
 
-    // Current spectrum line
     specCtx.beginPath();
     specCtx.strokeStyle = COLORMAPS[colormap].colors[6] || '#00e5ff';
     specCtx.lineWidth = 1.5;
@@ -218,7 +344,6 @@ export const WaterfallView: React.FC = () => {
     specCtx.stroke();
     specCtx.shadowBlur = 0;
 
-    // Fill under
     specCtx.lineTo(rect.width, specHeight);
     specCtx.lineTo(0, specHeight);
     specCtx.closePath();
@@ -228,7 +353,6 @@ export const WaterfallView: React.FC = () => {
     specCtx.fillStyle = gradient;
     specCtx.fill();
 
-    // Center frequency marker
     specCtx.strokeStyle = 'rgba(255, 171, 0, 0.6)';
     specCtx.lineWidth = 1;
     specCtx.setLineDash([4, 4]);
@@ -251,7 +375,6 @@ export const WaterfallView: React.FC = () => {
     return () => cancelAnimationFrame(animRef.current);
   }, [render]);
 
-  // Frequency scale labels
   const freqLabels: string[] = [];
   for (let i = 0; i <= 4; i++) {
     const f = centerFreq - bandwidth / 2 + (bandwidth * i) / 4;
@@ -263,6 +386,11 @@ export const WaterfallView: React.FC = () => {
       {/* Frequency scale */}
       <div className="h-6 flex items-center justify-between px-4 text-[9px] font-mono text-forge-cyan-dim border-b border-forge-border">
         <PopOutButton view="waterfall" className="absolute right-2 top-1 z-10" />
+        {/* SDR status indicator */}
+        <span className="flex items-center gap-1">
+          <span className={`inline-block w-2 h-2 rounded-full ${sdrConnected ? 'bg-green-500 shadow-[0_0_4px_#22c55e]' : 'bg-gray-600'}`} />
+          <span className={sdrConnected ? 'text-green-400' : 'text-forge-text-dim'}>{sdrConnected ? 'SDR' : 'DEMO'}</span>
+        </span>
         {freqLabels.map((label, i) => (
           <span key={i} className={i === 2 ? 'text-forge-amber' : ''}>{label}</span>
         ))}
@@ -297,8 +425,50 @@ export const WaterfallView: React.FC = () => {
 
       {/* Settings panel */}
       {showSettings && (
-        <div className="absolute bottom-12 right-3 w-64 panel-border rounded-lg p-4 z-20 space-y-3">
+        <div className="absolute bottom-12 right-3 w-72 panel-border rounded-lg p-4 z-20 space-y-3 max-h-[80vh] overflow-y-auto">
           <h3 className="text-xs font-mono tracking-wider text-forge-cyan">WATERFALL SETTINGS</h3>
+
+          {/* SDR Controls */}
+          <div className="border border-forge-border/50 rounded p-2 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono text-forge-text-dim flex items-center gap-1">
+                <span className={`inline-block w-1.5 h-1.5 rounded-full ${sdrConnected ? 'bg-green-500' : 'bg-gray-600'}`} />
+                SDR {sdrConnected ? 'CONNECTED' : 'DISCONNECTED'}
+              </span>
+              <button
+                onClick={connectSdr}
+                className="text-[9px] font-mono px-2 py-0.5 rounded border border-forge-cyan/30 text-forge-cyan hover:bg-forge-cyan/10 transition-all"
+              >
+                Connect SDR
+              </button>
+            </div>
+            <div>
+              <label className="text-[10px] font-mono text-forge-text-dim">Frequency (MHz)</label>
+              <div className="flex gap-1 mt-1">
+                <input
+                  type="text"
+                  value={sdrFreqInput}
+                  onChange={(e) => setSdrFreqInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { const v = parseFloat(sdrFreqInput); if (!isNaN(v)) tuneFrequency(v); } }}
+                  className="flex-1 bg-forge-bg border border-forge-border rounded px-2 py-1 text-xs text-forge-text"
+                />
+                <button
+                  onClick={() => { const v = parseFloat(sdrFreqInput); if (!isNaN(v)) tuneFrequency(v); }}
+                  className="text-[9px] font-mono px-2 py-0.5 rounded border border-forge-border text-forge-text-dim hover:text-forge-cyan hover:border-forge-cyan/30 transition-all"
+                >
+                  Tune
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] font-mono text-forge-text-dim">Gain: {sdrGain}</label>
+              <input
+                type="range" min="0" max="50" value={sdrGain}
+                onChange={(e) => { const g = parseInt(e.target.value); setSdrGain(g); setGain(g); }}
+                className="w-full h-1 mt-1"
+              />
+            </div>
+          </div>
 
           <div>
             <label className="text-[10px] font-mono text-forge-text-dim">FFT Size</label>

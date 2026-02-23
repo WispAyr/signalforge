@@ -1,0 +1,46 @@
+{
+  "flows": [
+    {
+      "id": "pager-decoder",
+      "name": "UK Pager Decoder",
+      "description": "POCSAG/FLEX on 153.350 MHz via SDR Multiplexer",
+      "locked": true,
+      "autoStart": true,
+      "category": "decoder",
+      "icon": "📟",
+      "nodes": [
+        { "id": "bg-pager-sdr", "type": "sdr_source", "position": { "x": 80, "y": 200 }, "params": { "freq": 153350000, "rate": 2048000, "label": "RTL-SDR (Multiplexed)" } },
+        { "id": "bg-pager-fft", "type": "fft", "position": { "x": 340, "y": 80 }, "params": { "size": 2048 } },
+        { "id": "bg-pager-wf", "type": "waterfall", "position": { "x": 580, "y": 80 }, "params": {} },
+        { "id": "bg-pager-dc", "type": "downconverter", "position": { "x": 340, "y": 200 }, "params": { "centerFreq": 153350000, "bandwidth": 12500, "outputRate": 22050 } },
+        { "id": "bg-pager-demod", "type": "fm_demod", "position": { "x": 580, "y": 200 }, "params": { "mode": "NFM", "bandwidth": 12500 } },
+        { "id": "bg-pager-dec", "type": "pocsag_decoder", "position": { "x": 820, "y": 200 }, "params": {} }
+      ],
+      "edges": [
+        { "id": "bg-pe1", "from": "bg-pager-sdr", "fromPort": "iq-out-0", "to": "bg-pager-fft", "toPort": "iq-in-0" },
+        { "id": "bg-pe2", "from": "bg-pager-fft", "fromPort": "fft-out-0", "to": "bg-pager-wf", "toPort": "fft-in-0" },
+        { "id": "bg-pe3", "from": "bg-pager-sdr", "fromPort": "iq-out-0", "to": "bg-pager-dc", "toPort": "iq-in-0" },
+        { "id": "bg-pe4", "from": "bg-pager-dc", "fromPort": "iq-out-0", "to": "bg-pager-demod", "toPort": "iq-in-0" },
+        { "id": "bg-pe5", "from": "bg-pager-demod", "fromPort": "audio-out-0", "to": "bg-pager-dec", "toPort": "audio-in-0" }
+      ]
+    },
+    {
+      "id": "ais-receiver",
+      "name": "AIS Maritime Receiver",
+      "description": "AIS on 161.975 / 162.025 MHz (future — requires multiplexer retune or second VRx)",
+      "locked": true,
+      "autoStart": false,
+      "category": "decoder",
+      "icon": "🚢",
+      "nodes": [
+        { "id": "bg-ais-sdr", "type": "sdr_source", "position": { "x": 80, "y": 200 }, "params": { "freq": 162000000, "rate": 2048000 } },
+        { "id": "bg-ais-dc", "type": "downconverter", "position": { "x": 340, "y": 200 }, "params": { "centerFreq": 162025000, "bandwidth": 25000, "outputRate": 48000 } },
+        { "id": "bg-ais-dec", "type": "ais_decoder", "position": { "x": 580, "y": 200 }, "params": {} }
+      ],
+      "edges": [
+        { "id": "bg-ae1", "from": "bg-ais-sdr", "fromPort": "iq-out-0", "to": "bg-ais-dc", "toPort": "iq-in-0" },
+        { "id": "bg-ae2", "from": "bg-ais-dc", "fromPort": "iq-out-0", "to": "bg-ais-dec", "toPort": "iq-in-0" }
+      ]
+    }
+  ]
+}

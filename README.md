@@ -105,6 +105,10 @@ SignalForge is a **visual, node-based radio signal processing platform** that ru
 | Data Flow Editor | **Separate visual editor** for event processing pipelines (distinct from RF flow editor) |
 | Map | Cursor-anchored zoom (0.3–64×), live entity display |
 | RTL-TCP SDR bridge | Full protocol client, real IQ streaming |
+| **SDR Multiplexer** | **One dongle, multiple virtual receivers** — DDC, FIR filter, decimation, NFM demod in pure TypeScript |
+| **Background Flows** | **Config-driven, locked-by-default signal processing pipelines** — auto-start, visible in Flow Editor |
+| **Pager Decoder** | **REAL POCSAG/FLEX decoding** via SDR multiplexer → multimon-ng pipeline (153.350 MHz) |
+| **Auto-detect SDR** | Detects RTL-SDR on startup, spawns rtl_tcp, auto-connects multiplexer |
 | SoapySDR client | SoapyRemote protocol, connects to real servers |
 | Rotator control | Hamlib rotctld TCP protocol |
 | MQTT integration | Full MQTT 3.1.1 client |
@@ -131,7 +135,7 @@ SignalForge is a **visual, node-based radio signal processing platform** that ru
 
 ### 🟠 Stub — Structure exists, core logic is simulated
 
-rtl_433 IoT, POCSAG/FLEX pager, sub-GHz/HackRF, SSTV, utility meters, WiFi/Bluetooth scanning, TSCM counter-surveillance, Meshtastic, VDL2, digital voice, Aaronia Spectran, number stations, audio streaming
+rtl_433 IoT, sub-GHz/HackRF, SSTV, utility meters, WiFi/Bluetooth scanning, TSCM counter-surveillance, Meshtastic, VDL2, digital voice, Aaronia Spectran, number stations, audio streaming
 
 ### 🔴 Planned — UI/concept only
 

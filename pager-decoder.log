@@ -1,0 +1,63 @@
+[2026-02-23 20:10:01] Starting pager decoder on 153.350M
+[2026-02-23 20:10:01] Killing rtl_tcp to free SDR dongle...
+[2026-02-23 20:10:03] Starting pipeline: rtl_fm 153.350M → multimon-ng → SignalForge API
+Found 1 device(s):
+  0:  Realtek, RTL2838UHIDIR, SN: 00000001
+
+Using device 0: Generic RTL2832U OEM
+Found Rafael Micro R820T tuner
+Tuner gain set to 40.20 dB.
+Tuned to 153603575 Hz.
+Oversampling input by: 46x.
+Oversampling output by: 1x.
+Buffer size: 8.08ms
+Exact sample rate is: 1014300.020041 Hz
+Sampling at 1014300 S/s.
+Output at 22050 Hz.
+Signal caught, exiting!
+
+User cancel, exiting...
+[2026-02-23 20:13:04] Starting pager decoder on 153.350M
+[2026-02-23 20:13:04] Starting pager decoder on 153.350M
+[2026-02-23 20:13:04] Starting pipeline: rtl_fm 153.350M → multimon-ng → SignalForge API
+[2026-02-23 20:13:04] Starting pipeline: rtl_fm 153.350M → multimon-ng → SignalForge API
+Found 1 device(s):
+  0:  Realtek, RTL2838UHIDIR, SN: 00000001
+
+Using device 0: Generic RTL2832U OEM
+
+Kernel driver is active, or device is claimed by second instance of librtlsdr.
+In the first case, please either detach or blacklist the kernel module
+(dvb_usb_rtl28xxu), or enable automatic detaching at compile time.
+
+usb_claim_interface error -3
+Failed to open rtlsdr device #0.
+[2026-02-23 20:13:04] Pipeline exited
+[2026-02-23 20:13:04] Pipeline exited
+[2026-02-23 20:13:28] Starting pager decoder on 153.350M
+[2026-02-23 20:13:28] Starting pager decoder on 153.350M
+[2026-02-23 20:13:28] Starting pipeline: rtl_fm 153.350M → multimon-ng → SignalForge API
+[2026-02-23 20:13:28] Starting pipeline: rtl_fm 153.350M → multimon-ng → SignalForge API
+Found 1 device(s):
+  0:  Realtek, RTL2838UHIDIR, SN: 00000001
+
+Using device 0: Generic RTL2832U OEM
+Found Rafael Micro R820T tuner
+Tuner gain set to 49.60 dB.
+Tuned to 153603575 Hz.
+Oversampling input by: 46x.
+Oversampling output by: 1x.
+Buffer size: 8.08ms
+Exact sample rate is: 1014300.020041 Hz
+Sampling at 1014300 S/s.
+Output at 22050 Hz.
+[2026-02-23 20:25:19] Starting pager decoder: 153.350M gain=49.6
+[2026-02-23 20:25:19] Pipeline running
+[2026-02-23 20:27:00] POST error: <urlopen error [Errno 61] Connection refused>
+[2026-02-23 20:29:03] POST error: <urlopen error [Errno 61] Connection refused>
+[2026-02-23 20:29:34] POST error: <urlopen error [Errno 61] Connection refused>
+[2026-02-23 20:30:15] POST error: <urlopen error [Errno 61] Connection refused>
+[2026-02-23 20:30:33] POST error: <urlopen error [Errno 61] Connection refused>
+[2026-02-23 20:31:08] Shutting down...
+[2026-02-23 20:31:11] Starting pager decoder: 153.350M gain=49.6
+[2026-02-23 20:31:11] Pipeline running

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import WebSocket from 'ws';
 import type { AISMessage, Vessel } from '@signalforge/shared';
 
 const NAV_STATUSES: Record<number, string> = {
@@ -16,18 +17,35 @@ const SHIP_TYPES: Record<number, string> = {
   60: 'Passenger', 70: 'Cargo', 80: 'Tanker', 90: 'Other',
 };
 
+// AISStream.io API key
+const AISSTREAM_API_KEY = 'b08eefa8987f4606684a685b3b81d755c5072f47';
+
+// Bounding boxes: [SW corner, NE corner] as [lon, lat]
+// UK/Ireland + North Sea + English Channel + Bay of Biscay approaches
+const BOUNDING_BOXES = [
+  [[49, -12], [62, 3]],    // UK, Ireland, North Sea, Norwegian approaches
+  [[43, -6], [49, 0]],     // Bay of Biscay / Brittany approaches
+];
+
 /**
- * AIS Decoder — Fallback chain: local NMEA feed → Digitraffic API → demo mode
- * Digitraffic (Finnish Transport Agency) provides free, no-auth AIS data.
+ * AIS Decoder — Priority chain:
+ * 1. AISStream.io WebSocket (global, real-time, UK/European waters)
+ * 2. Digitraffic API (Finnish waters, supplementary)
+ * 3. Demo mode (fallback)
  */
 export class AISDecoder extends EventEmitter {
   private vessels: Map<string, Vessel> = new Map();
   private demoInterval: ReturnType<typeof setInterval> | null = null;
   private digitrafficTimer: ReturnType<typeof setInterval> | null = null;
   private vesselMetadata: Map<string, any> = new Map();
-  private mode: 'local' | 'digitraffic' | 'demo' = 'demo';
+  private aisStreamWs: WebSocket | null = null;
+  private aisStreamReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private mode: 'aisstream' | 'digitraffic' | 'demo' = 'demo';
+  private messageCount = 0;
 
   start() {
+    this.startAISStream();
+    // Also start Digitraffic as supplementary (Finnish/Baltic waters)
     this.startDigitrafficFeed();
     setInterval(() => this.cleanup(), 60000);
   }
@@ -35,6 +53,8 @@ export class AISDecoder extends EventEmitter {
   stop() {
     if (this.demoInterval) clearInterval(this.demoInterval);
     if (this.digitrafficTimer) clearInterval(this.digitrafficTimer);
+    if (this.aisStreamReconnectTimer) clearTimeout(this.aisStreamReconnectTimer);
+    if (this.aisStreamWs) { try { this.aisStreamWs.close(); } catch {} }
   }
 
   getVessels(): Vessel[] {
@@ -43,7 +63,7 @@ export class AISDecoder extends EventEmitter {
 
   getMode(): string { return this.mode; }
 
-  private updateVessel(msg: AISMessage) {
+  private updateVessel(msg: AISMessage) { if (this.vessels.size > 5000 && !this.vessels.has(msg.mmsi)) return; // cap at 5000
     let v = this.vessels.get(msg.mmsi);
     if (!v) {
       v = { mmsi: msg.mmsi, lastSeen: Date.now(), messageCount: 0, trail: [] };
@@ -69,42 +89,140 @@ export class AISDecoder extends EventEmitter {
   }
 
   private cleanup() {
-    const cutoff = Date.now() - 600000;
+    const cutoff = Date.now() - 600000; // 10 min stale
     for (const [mmsi, v] of this.vessels) {
       if (v.lastSeen < cutoff) this.vessels.delete(mmsi);
     }
   }
 
-  // --- Digitraffic (Finnish Transport Agency) free AIS API ---
-  private async startDigitrafficFeed() {
-    console.log('🚢 AIS: Trying Digitraffic API (Finnish Transport Agency)...');
+  // ── AISStream.io WebSocket (PRIMARY) ──────────────────────────────────
+  private startAISStream() {
+    if (!AISSTREAM_API_KEY) {
+      console.log('🚢 AIS: No AISStream API key, skipping');
+      return;
+    }
+
+    console.log('🚢 AIS: Connecting to AISStream.io WebSocket...');
 
     try {
-      // Fetch vessel metadata first
-      await this.fetchVesselMetadata();
-      // Fetch initial positions
-      await this.fetchDigitrafficPositions();
+      this.aisStreamWs = new WebSocket('wss://stream.aisstream.io/v0/stream');
 
-      this.mode = 'digitraffic';
-      console.log(`🚢 AIS: Digitraffic connected [LIVE - ${this.vessels.size} vessels]`);
+      this.aisStreamWs.on('open', () => {
+        console.log('🚢 AIS: AISStream.io connected, subscribing to UK/European waters...');
+        this.aisStreamWs!.send(JSON.stringify({
+          Apikey: AISSTREAM_API_KEY,
+          BoundingBoxes: BOUNDING_BOXES,
+          FiltersShipMMSI: [],
+          FilterMessageTypes: ['PositionReport', 'ShipStaticData', 'StandardSearchAndRescueAircraftReport'],
+        }));
+        this.mode = 'aisstream';
+      });
 
-      // Poll every 30 seconds
-      this.digitrafficTimer = setInterval(async () => {
+      this.aisStreamWs.on('message', (data: WebSocket.Data) => {
         try {
-          await this.fetchDigitrafficPositions();
-        } catch {
-          // Silently retry
-        }
-      }, 30000);
+          const msg = JSON.parse(data.toString());
+          this.processAISStreamMessage(msg);
+        } catch {}
+      });
 
-      // Refresh metadata every 5 minutes
+      this.aisStreamWs.on('close', () => {
+        console.log('🚢 AIS: AISStream.io disconnected, reconnecting in 10s...');
+        this.scheduleAISStreamReconnect();
+      });
+
+      this.aisStreamWs.on('error', (err) => {
+        console.error('🚢 AIS: AISStream.io error:', err.message);
+        this.scheduleAISStreamReconnect();
+      });
+
+    } catch (err: any) {
+      console.error('🚢 AIS: AISStream.io connection failed:', err.message);
+      this.scheduleAISStreamReconnect();
+    }
+  }
+
+  private scheduleAISStreamReconnect() {
+    if (this.aisStreamReconnectTimer) return;
+    this.aisStreamReconnectTimer = setTimeout(() => {
+      this.aisStreamReconnectTimer = null;
+      if (this.aisStreamWs) { try { this.aisStreamWs.close(); } catch {} }
+      this.aisStreamWs = null;
+      this.startAISStream();
+    }, 10000);
+  }
+
+  private processAISStreamMessage(msg: any) {
+    const meta = msg.MetaData;
+    if (!meta) return;
+
+    const mmsi = String(meta.MMSI);
+    const lat = meta.latitude;
+    const lon = meta.longitude;
+    const shipName = meta.ShipName?.trim();
+
+    // Position reports (message types 1, 2, 3, 18, 19)
+    const posReport = msg.Message?.PositionReport;
+    const staticData = msg.Message?.ShipStaticData;
+
+    const aisMsg: AISMessage = {
+      mmsi,
+      messageType: posReport ? 1 : 5,
+      timestamp: Date.now(),
+    };
+
+    if (lat && lon && lat !== 0 && lon !== 0) {
+      aisMsg.latitude = lat;
+      aisMsg.longitude = lon;
+    }
+
+    if (shipName && shipName !== '') aisMsg.shipName = shipName;
+
+    if (posReport) {
+      if (posReport.Cog !== undefined && posReport.Cog !== 3600) aisMsg.cog = posReport.Cog / 10;
+      if (posReport.Sog !== undefined) aisMsg.sog = posReport.Sog / 10;
+      if (posReport.TrueHeading !== undefined && posReport.TrueHeading !== 511) aisMsg.heading = posReport.TrueHeading;
+      if (posReport.NavigationalStatus !== undefined) {
+        aisMsg.navStatus = posReport.NavigationalStatus;
+        aisMsg.navStatusName = NAV_STATUSES[posReport.NavigationalStatus];
+      }
+    }
+
+    if (staticData) {
+      if (staticData.Type !== undefined) {
+        aisMsg.shipType = staticData.Type;
+        aisMsg.shipTypeName = SHIP_TYPES[staticData.Type] || SHIP_TYPES[Math.floor(staticData.Type / 10) * 10] || 'Unknown';
+      }
+      if (staticData.CallSign) aisMsg.callSign = staticData.CallSign.trim();
+      if (staticData.Destination) aisMsg.destination = staticData.Destination.trim();
+      if (staticData.ImoNumber) aisMsg.imo = staticData.ImoNumber;
+    }
+
+    this.updateVessel(aisMsg);
+    this.emit('message', aisMsg);
+    this.messageCount++;
+
+    if (this.messageCount % 500 === 0) {
+      console.log(`🚢 AIS: ${this.messageCount} messages received, ${this.vessels.size} vessels tracked`);
+    }
+  }
+
+  // ── Digitraffic (SUPPLEMENTARY — Finnish/Baltic waters) ───────────────
+  private async startDigitrafficFeed() {
+    try {
+      await this.fetchVesselMetadata();
+      await this.fetchDigitrafficPositions();
+      console.log(`🚢 AIS: Digitraffic supplementary feed active [${this.vessels.size} vessels]`);
+
+      this.digitrafficTimer = setInterval(async () => {
+        try { await this.fetchDigitrafficPositions(); } catch {}
+      }, 60000); // Every 60s (supplementary, not primary)
+
       setInterval(async () => {
         try { await this.fetchVesselMetadata(); } catch {}
       }, 300000);
 
     } catch (err: any) {
-      console.log(`🚢 AIS: Digitraffic unavailable (${err.message}), falling back to demo mode`);
-      this.startDemoMode();
+      console.log(`🚢 AIS: Digitraffic unavailable (${err.message}), AISStream is primary`);
     }
   }
 
@@ -126,9 +244,7 @@ export class AISDecoder extends EventEmitter {
     if (!res.ok) throw new Error(`Locations API ${res.status}`);
     const data = await res.json() as { features: any[] };
 
-    let count = 0;
-    for (const f of data.features) {
-      if (count >= 200) break; // Cap to avoid overload
+    let dtCount = 0; for (const f of data.features) { if (dtCount >= 500) break; dtCount++;
       const props = f.properties;
       const coords = f.geometry?.coordinates;
       if (!coords || coords[0] === 0) continue;
@@ -149,7 +265,6 @@ export class AISDecoder extends EventEmitter {
         timestamp: Date.now(),
       };
 
-      // Enrich from metadata
       if (meta) {
         msg.shipName = meta.name;
         msg.callSign = meta.callSign;
@@ -161,11 +276,10 @@ export class AISDecoder extends EventEmitter {
 
       this.updateVessel(msg);
       this.emit('message', msg);
-      count++;
     }
   }
 
-  // Demo mode
+  // Demo mode (only if everything else fails)
   private startDemoMode() {
     if (this.demoInterval) return;
     this.mode = 'demo';
@@ -176,10 +290,6 @@ export class AISDecoder extends EventEmitter {
       { mmsi: '235006700', name: 'ISLE OF ARRAN', type: 60, baseLat: 55.75, baseLon: -5.15, sog: 12, cog: 180, dest: 'ARDROSSAN' },
       { mmsi: '311045600', name: 'ATLANTIC STAR', type: 70, baseLat: 54.60, baseLon: -5.90, sog: 8, cog: 315, dest: 'BELFAST' },
       { mmsi: '244670581', name: 'STENA SUPERFAST', type: 60, baseLat: 54.80, baseLon: -5.50, sog: 18, cog: 270, dest: 'BELFAST' },
-      { mmsi: '235082528', name: 'CLYDE FISHER', type: 30, baseLat: 56.00, baseLon: -5.50, sog: 5, cog: 90, dest: 'FISHING' },
-      { mmsi: '232003411', name: 'OCEAN SPIRIT', type: 37, baseLat: 55.95, baseLon: -4.77, sog: 6, cog: 45, dest: 'GREENOCK' },
-      { mmsi: '235501234', name: 'CLYDE PILOT', type: 50, baseLat: 55.85, baseLon: -4.90, sog: 10, cog: 160, dest: 'GREENOCK' },
-      { mmsi: '235090001', name: 'RNLI TROON', type: 51, baseLat: 55.55, baseLon: -4.66, sog: 22, cog: 200, dest: 'SAR OPS' },
     ];
 
     this.demoInterval = setInterval(() => {
@@ -187,7 +297,6 @@ export class AISDecoder extends EventEmitter {
       for (const demo of demoVessels) {
         const driftLat = Math.sin(t * 0.0005 + parseFloat(demo.mmsi.slice(-3)) * 0.01) * 0.005;
         const driftLon = Math.cos(t * 0.0005 + parseFloat(demo.mmsi.slice(-3)) * 0.01) * 0.008;
-
         const msg: AISMessage = {
           mmsi: demo.mmsi, messageType: 1, shipName: demo.name, shipType: demo.type,
           shipTypeName: SHIP_TYPES[demo.type],

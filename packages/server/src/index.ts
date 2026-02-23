@@ -1,9 +1,13 @@
 import express from 'express';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
 import { SDRBridge } from './sdr/bridge.js';
 import { RtlTcpClient } from './sdr/rtltcp.js';
+import { SDRMultiplexer } from './sdr/multiplexer.js';
 import { SoapyClient } from './sdr/soapy.js';
 import { RotatorClient } from './sdr/rotator.js';
 import { DopplerService } from './sdr/doppler.js';
@@ -111,6 +115,7 @@ const mqttClient = new MqttClient();
 
 // SDR connections
 const rtlTcpConnections = new Map<string, RtlTcpClient>();
+const sdrMultiplexer = new SDRMultiplexer();
 const soapyConnections = new Map<string, SoapyClient>();
 let rotatorClient: RotatorClient | null = null;
 
@@ -812,6 +817,91 @@ app.post('/api/sdr/agc', (req, res) => {
   res.status(404).json({ error: 'No SDR connection' });
 });
 
+// ── SDR Multiplexer endpoints ──
+app.get('/api/sdr/multiplexer/status', (_req, res) => {
+  res.json(sdrMultiplexer.getStatus());
+});
+
+app.get('/api/sdr/multiplexer/flow', (_req, res) => {
+  // Return the multiplexer's current state as a flow graph for the FlowEditor
+  const status = sdrMultiplexer.getStatus();
+  const nodes: any[] = [];
+  const connections: any[] = [];
+  let y = 200;
+
+  // Source node
+  nodes.push({
+    id: 'mux-sdr-source',
+    type: 'sdr_source',
+    position: { x: 80, y: 200 },
+    params: { freq: status.centerFreq, rate: status.sampleRate, label: 'RTL-SDR (Multiplexed)' },
+  });
+
+  // FFT/Waterfall branch
+  nodes.push({ id: 'mux-fft', type: 'fft', position: { x: 340, y: 80 }, params: { size: status.fftSize } });
+  nodes.push({ id: 'mux-waterfall', type: 'waterfall', position: { x: 580, y: 80 }, params: {} });
+  connections.push({ id: 'c-sdr-fft', from: 'mux-sdr-source', fromPort: 'iq-out-0', to: 'mux-fft', toPort: 'iq-in-0' });
+  connections.push({ id: 'c-fft-wf', from: 'mux-fft', fromPort: 'fft-out-0', to: 'mux-waterfall', toPort: 'fft-in-0' });
+
+  // Virtual receivers
+  for (const rx of status.receivers) {
+    y += 160;
+    const dcId = `mux-dc-${rx.id}`;
+    const demodId = `mux-demod-${rx.id}`;
+    nodes.push({
+      id: dcId, type: 'downconverter',
+      position: { x: 340, y },
+      params: { centerFreq: rx.centerFreq, bandwidth: rx.bandwidth, outputRate: rx.outputRate },
+    });
+    connections.push({ id: `c-sdr-${rx.id}`, from: 'mux-sdr-source', fromPort: 'iq-out-0', to: dcId, toPort: 'iq-in-0' });
+
+    nodes.push({
+      id: demodId, type: 'fm_demod',
+      position: { x: 580, y },
+      params: { mode: rx.mode, bandwidth: rx.bandwidth },
+    });
+    connections.push({ id: `c-dc-demod-${rx.id}`, from: dcId, fromPort: 'iq-out-0', to: demodId, toPort: 'iq-in-0' });
+
+    if (rx.decoder === 'multimon-ng') {
+      const decId = `mux-pocsag-${rx.id}`;
+      nodes.push({ id: decId, type: 'pocsag_decoder', position: { x: 820, y }, params: {} });
+      connections.push({ id: `c-demod-dec-${rx.id}`, from: demodId, fromPort: 'audio-out-0', to: decId, toPort: 'audio-in-0' });
+    }
+  }
+
+  res.json({ id: 'sdr-multiplexer', name: 'SDR Multiplexer', nodes, connections, auto: true });
+});
+
+
+app.post('/api/sdr/multiplexer/receiver', (req, res) => {
+  try {
+    const rx = sdrMultiplexer.addReceiver(req.body);
+    res.json(rx.getStatus());
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/sdr/multiplexer/receiver/:id', (req, res) => {
+  const ok = sdrMultiplexer.removeReceiver(req.params.id);
+  res.json({ success: ok });
+});
+
+app.post('/api/sdr/multiplexer/receiver/:id/tune', (req, res) => {
+  const ok = sdrMultiplexer.retuneReceiver(req.params.id, req.body.centerFreq);
+  res.json({ success: ok });
+});
+
+app.get('/api/sdr/mux-devices', (_req, res2) => {
+  const detection = sdrMultiplexer.detectDevice();
+  const muxStatus = sdrMultiplexer.getStatus();
+  res2.json({
+    detected: detection.found,
+    info: detection.info,
+    multiplexer: muxStatus,
+  });
+});
+
 // --- SoapySDR ---
 app.post('/api/soapy/connect', async (req, res) => {
   const { host, port, driver } = req.body;
@@ -1300,6 +1390,100 @@ app.delete('/api/flows/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+
+// --- Background Flows ---
+const __dirname_bg = dirname(fileURLToPath(import.meta.url));
+const BG_FLOWS_PATH = join(__dirname_bg, '..', 'config', 'background-flows.json');
+
+interface BackgroundFlow {
+  id: string;
+  name: string;
+  description: string;
+  locked: boolean;
+  autoStart: boolean;
+  category: string;
+  icon: string;
+  nodes: unknown[];
+  edges: unknown[];
+  status?: 'running' | 'stopped' | 'error';
+}
+
+let backgroundFlows: BackgroundFlow[] = [];
+try {
+  if (existsSync(BG_FLOWS_PATH)) {
+    const raw = JSON.parse(readFileSync(BG_FLOWS_PATH, 'utf-8'));
+    backgroundFlows = (raw.flows || []).map((f: BackgroundFlow) => ({
+      ...f,
+      status: f.autoStart ? 'running' : 'stopped',
+    }));
+    console.log(`📋 Loaded ${backgroundFlows.length} background flows`);
+  }
+} catch (err: any) {
+  console.error(`📋 Failed to load background flows: ${err.message}`);
+}
+
+// If multiplexer is running, mark pager-decoder as running
+sdrMultiplexer.on('connected', () => {
+  const pf = backgroundFlows.find(f => f.id === 'pager-decoder');
+  if (pf) pf.status = 'running';
+});
+sdrMultiplexer.on('disconnected', () => {
+  const pf = backgroundFlows.find(f => f.id === 'pager-decoder');
+  if (pf) pf.status = 'stopped';
+});
+
+app.get('/api/background-flows', (_req, res) => {
+  res.json(backgroundFlows.map(f => ({
+    id: f.id, name: f.name, description: f.description, locked: f.locked,
+    autoStart: f.autoStart, category: f.category, icon: f.icon,
+    status: f.status || 'stopped', nodeCount: f.nodes.length, edgeCount: f.edges.length,
+  })));
+});
+
+app.get('/api/background-flows/:id', (req, res) => {
+  const flow = backgroundFlows.find(f => f.id === req.params.id);
+  if (!flow) return res.status(404).json({ error: 'Not found' });
+  res.json(flow);
+});
+
+app.post('/api/background-flows/:id/lock', (req, res) => {
+  const flow = backgroundFlows.find(f => f.id === req.params.id);
+  if (!flow) return res.status(404).json({ error: 'Not found' });
+  flow.locked = req.body.locked !== false;
+  // Persist
+  try {
+    writeFileSync(BG_FLOWS_PATH, JSON.stringify({ flows: backgroundFlows }, null, 2));
+  } catch {}
+  res.json({ ok: true, locked: flow.locked });
+});
+
+app.put('/api/background-flows/:id', (req, res) => {
+  const flow = backgroundFlows.find(f => f.id === req.params.id);
+  if (!flow) return res.status(404).json({ error: 'Not found' });
+  if (flow.locked) return res.status(403).json({ error: 'Flow is locked — unlock first' });
+  if (req.body.nodes) flow.nodes = req.body.nodes;
+  if (req.body.edges) flow.edges = req.body.edges;
+  if (req.body.name) flow.name = req.body.name;
+  if (req.body.description) flow.description = req.body.description;
+  try {
+    writeFileSync(BG_FLOWS_PATH, JSON.stringify({ flows: backgroundFlows }, null, 2));
+  } catch {}
+  res.json({ ok: true });
+});
+
+app.get('/api/flows/all', (_req, res) => {
+  // Combined view: background + user flows
+  const bg = backgroundFlows.map(f => ({
+    id: f.id, name: f.name, type: 'background' as const, icon: f.icon,
+    status: f.status, locked: f.locked, nodeCount: f.nodes.length,
+  }));
+  const user = savedFlows.map(f => ({
+    id: f.id, name: f.name, type: 'user' as const, icon: '📐',
+    status: 'stopped' as const, locked: false, nodeCount: f.nodes.length,
+  }));
+  res.json([...bg, ...user]);
+});
+
 // --- Flowgraph presets ---
 app.get('/api/presets', (_req, res) => {
   res.json([
@@ -1384,6 +1568,25 @@ app.get('/api/presets', (_req, res) => {
         { sourceNode: 0, sourcePort: 'iq-out-0', targetNode: 1, targetPort: 'iq-in-0' },
         { sourceNode: 1, sourcePort: 'audio-out-0', targetNode: 2, targetPort: 'audio-in-0' },
         { sourceNode: 2, sourcePort: 'packets-out-0', targetNode: 3, targetPort: 'any-in-0' },
+      ],
+    },
+    {
+      id: 'pager-decoder', name: 'Pager Decoder (POCSAG/FLEX)', description: 'Decode pager messages from 153.350 MHz via SDR Multiplexer',
+      icon: '📟', category: 'decoder',
+      nodes: [
+        { type: 'sdr_source', position: { x: 80, y: 200 }, params: { freq: 153.35e6, rate: 2.048e6, label: 'RTL-SDR' } },
+        { type: 'downconverter', position: { x: 340, y: 200 }, params: { centerFreq: 153.35e6, bandwidth: 12500 } },
+        { type: 'fm_demod', position: { x: 580, y: 200 }, params: { bandwidth: 12500, mode: 'NFM' } },
+        { type: 'pocsag_decoder', position: { x: 820, y: 200 }, params: {} },
+        { type: 'fft', position: { x: 340, y: 80 }, params: { size: 2048 } },
+        { type: 'waterfall', position: { x: 580, y: 80 }, params: {} },
+      ],
+      connections: [
+        { sourceNode: 0, sourcePort: 'iq-out-0', targetNode: 1, targetPort: 'iq-in-0' },
+        { sourceNode: 1, sourcePort: 'iq-out-0', targetNode: 2, targetPort: 'iq-in-0' },
+        { sourceNode: 2, sourcePort: 'audio-out-0', targetNode: 3, targetPort: 'audio-in-0' },
+        { sourceNode: 0, sourcePort: 'iq-out-0', targetNode: 4, targetPort: 'iq-in-0' },
+        { sourceNode: 4, sourcePort: 'fft-out-0', targetNode: 5, targetPort: 'fft-in-0' },
       ],
     },
   ]);
@@ -2009,6 +2212,15 @@ app.get('/api/pager/alerts', (req, res) => res.json(pagerService.getAlerts(parse
 app.post('/api/pager/alerts/:id/ack', (req, res) => res.json({ ok: pagerService.acknowledgeAlert(req.params.id) }));
 app.get('/api/pager/config', (_req, res) => res.json(pagerService.getConfig()));
 app.post('/api/pager/config', (req, res) => res.json(pagerService.updateConfig(req.body)));
+
+// Pager message injection endpoint (for external decoder pipeline)
+app.post("/api/pager/messages", (req, res) => {
+  try {
+    const { protocol, capcode, address, function: fn, content, baudRate } = req.body;
+    pagerService.processMessage({ protocol: protocol || "POCSAG", capcode: capcode || address, address: address || capcode, function: fn || 0, content: content || "", baudRate: baudRate || 1200 });
+    res.json({ ok: true });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
 
 // ============================================================================
 // REST API — Phase 7: Sub-GHz
@@ -2701,6 +2913,24 @@ function logInfo(component: string, message: string, data?: Record<string, unkno
   const entry = { level: 'info', timestamp: new Date().toISOString(), component, message, ...data };
   console.log(JSON.stringify(entry));
 }
+
+
+// ── SDR Multiplexer event wiring ──
+sdrMultiplexer.on('fft_data', (data) => {
+  const buf = Buffer.from(data.magnitudes.buffer);
+  broadcastBinary(buf);
+  broadcast({ type: 'fft_meta', centerFrequency: data.centerFrequency, sampleRate: data.sampleRate, fftSize: data.fftSize });
+});
+sdrMultiplexer.on('iq_meta', (meta) => broadcast(meta));
+sdrMultiplexer.on('pager_message', (msg) => {
+  pagerService.processMessage(msg);
+});
+
+// Auto-start multiplexer
+sdrMultiplexer.autoStart().then(ok => {
+  if (ok) console.log("📡 SDR Multiplexer auto-started successfully");
+  else console.log("📡 SDR Multiplexer: no device or auto-start failed");
+}).catch(err => console.error("📡 SDR Multiplexer auto-start error:", err));
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`

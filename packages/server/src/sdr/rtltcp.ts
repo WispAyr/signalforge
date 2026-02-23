@@ -47,6 +47,7 @@ export class RtlTcpClient extends EventEmitter {
 
   constructor(host: string, port: number) {
     super();
+    this.on("error", () => {}); // Prevent unhandled error crash
     this.host = host;
     this.port = port;
     this.connectionId = `rtltcp-${host}:${port}-${Date.now()}`;
@@ -129,7 +130,7 @@ export class RtlTcpClient extends EventEmitter {
         console.error(`📡 RTL-TCP error: ${err.message}`);
         clearTimeout(timeout);
         this.connected = false;
-        this.emit('error', err);
+        console.error("RTL-TCP error:", err.message);
         reject(err);
       });
 
