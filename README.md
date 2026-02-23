@@ -152,6 +152,24 @@ Nodes snap together. Data flows left-to-right. Every parameter is tweakable in r
 
 ---
 
+## Acknowledgements
+
+SignalForge stands on the shoulders of two outstanding projects that directly inspired its architecture and vision:
+
+### 🛰️ [Ground Station](https://github.com/sgoudelis/ground-station) by sgoudelis
+
+An exceptionally comprehensive satellite monitoring suite featuring multi-SDR support via SoapySDR, real-time satellite tracking with SGP4/Skyfield, automated observation scheduling, a rich waterfall display with VFO markers, and a full DSP pipeline with 16+ demodulators and decoders. Ground Station's approach to TLE synchronisation, pass prediction, Doppler correction, telemetry parsing (AX.25/CCSDS/CSP), and its handler-based Socket.IO architecture were a direct inspiration for SignalForge's satellite tracking, SDR integration, and observation concepts. If you need a production-grade Python-based ground station today, [go use it](https://github.com/sgoudelis/ground-station) — it's remarkable.
+
+### ⚡ [CyberEther](https://github.com/luigifcruz/CyberEther)
+
+A pioneering browser-based, GPU-accelerated signal processing engine that proved the viability of WebGPU for real-time radio DSP in the browser. CyberEther's flow-based visual pipeline architecture — where signal processing blocks are wired together as a directed graph with GPU-accelerated rendering — is the foundational concept behind SignalForge's flow editor and our roadmap for client-side WebGPU DSP. The idea that a waterfall display could run at 60fps+ in a browser via compute shaders came directly from this project.
+
+---
+
+Both projects demonstrated that the future of software-defined radio is open, visual, and browser-native. SignalForge aims to build on their pioneering work by combining satellite tracking, multi-protocol decoding, and GPU-accelerated visualisation into a unified TypeScript platform.
+
+---
+
 ## License
 
 MIT © [WispAyr](https://github.com/WispAyr)
