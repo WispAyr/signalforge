@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import type { Aircraft, Vessel, APRSStation, TLE, SatellitePosition } from '@signalforge/shared';
 import { useLocationStore } from '../stores/location';
+import { PopOutButton } from './ui/PopOutButton';
 
 interface SatWithPos extends TLE {
   position: SatellitePosition;
@@ -400,6 +401,11 @@ export const MapView: React.FC = () => {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       />
+
+      {/* Pop out */}
+      <div className="absolute top-3 right-3 z-20">
+        <PopOutButton view="map" />
+      </div>
 
       {/* Search bar */}
       <div className="absolute top-3 left-[220px] flex gap-2 z-10">

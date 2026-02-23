@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { COLORMAPS } from '@signalforge/shared';
 import type { ColormapName } from '@signalforge/shared';
+import { PopOutButton } from './ui/PopOutButton';
 
 export const WaterfallView: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -261,6 +262,7 @@ export const WaterfallView: React.FC = () => {
     <div className="h-full w-full flex flex-col bg-forge-bg relative">
       {/* Frequency scale */}
       <div className="h-6 flex items-center justify-between px-4 text-[9px] font-mono text-forge-cyan-dim border-b border-forge-border">
+        <PopOutButton view="waterfall" className="absolute right-2 top-1 z-10" />
         {freqLabels.map((label, i) => (
           <span key={i} className={i === 2 ? 'text-forge-amber' : ''}>{label}</span>
         ))}

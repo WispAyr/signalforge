@@ -1,27 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { db, RECORDINGS_DIR } from '../services/database.js';
 import type { Bookmark, Recording, NotificationConfig, Notification } from '@signalforge/shared';
 import { SIGNAL_DATABASE } from '@signalforge/shared';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const BOOKMARKS_FILE = path.join(DATA_DIR, 'bookmarks.json');
-const RECORDINGS_DIR = path.join(DATA_DIR, 'recordings');
-const NOTIFICATIONS_FILE = path.join(DATA_DIR, 'notifications.json');
-
-function ensureDir(dir: string) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
-
 export class SignalDatabaseService {
-  private bookmarks: Bookmark[] = [];
-  private recordings: Recording[] = [];
   private notificationConfigs: NotificationConfig[] = [];
   private notifications: Notification[] = [];
 
   constructor() {
-    ensureDir(DATA_DIR);
-    ensureDir(RECORDINGS_DIR);
-    this.loadBookmarks();
     this.loadNotificationConfigs();
   }
 
@@ -50,50 +37,36 @@ export class SignalDatabaseService {
     });
   }
 
-  // ── Bookmarks ────────────────────────────────────────────────────────
+  // ── Bookmarks (SQLite) ──────────────────────────────────────────────
 
-  private loadBookmarks() {
-    try {
-      if (fs.existsSync(BOOKMARKS_FILE)) {
-        this.bookmarks = JSON.parse(fs.readFileSync(BOOKMARKS_FILE, 'utf-8'));
-      }
-    } catch { /* ignore */ }
+  getBookmarks(): Bookmark[] {
+    return (db.prepare('SELECT * FROM bookmarks ORDER BY created_at DESC').all() as any[]).map(r => ({
+      id: r.id,
+      name: r.name,
+      frequency: r.frequency,
+      mode: r.mode || undefined,
+      category: r.category || undefined,
+      notes: r.notes || undefined,
+      created: r.created_at,
+    }));
   }
-
-  private saveBookmarks() {
-    fs.writeFileSync(BOOKMARKS_FILE, JSON.stringify(this.bookmarks, null, 2));
-  }
-
-  getBookmarks() { return [...this.bookmarks]; }
 
   addBookmark(bm: Omit<Bookmark, 'id' | 'created'>): Bookmark {
-    const entry: Bookmark = {
-      ...bm,
-      id: `bm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      created: new Date().toISOString(),
-    };
-    this.bookmarks.push(entry);
-    this.saveBookmarks();
-    return entry;
+    const id = `bm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const created = new Date().toISOString();
+    db.prepare('INSERT INTO bookmarks (id, frequency, name, mode, category, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, bm.frequency, bm.name, bm.mode || null, bm.category || null, bm.notes || null, created);
+    return { id, ...bm, created };
   }
 
   removeBookmark(id: string) {
-    this.bookmarks = this.bookmarks.filter(b => b.id !== id);
-    this.saveBookmarks();
+    db.prepare('DELETE FROM bookmarks WHERE id = ?').run(id);
   }
 
   // ── Recordings ───────────────────────────────────────────────────────
 
-  getRecordings() { return [...this.recordings]; }
-
-  addRecording(rec: Omit<Recording, 'id' | 'created'>): Recording {
-    const entry: Recording = {
-      ...rec,
-      id: `rec-${Date.now()}`,
-      created: new Date().toISOString(),
-    };
-    this.recordings.push(entry);
-    return entry;
+  getRecordings(): any[] {
+    return db.prepare('SELECT * FROM recordings ORDER BY created_at DESC').all();
   }
 
   getRecordingsDir() { return RECORDINGS_DIR; }
@@ -101,6 +74,8 @@ export class SignalDatabaseService {
   // ── Notifications ────────────────────────────────────────────────────
 
   private loadNotificationConfigs() {
+    const DATA_DIR = path.join(process.cwd(), 'data');
+    const NOTIFICATIONS_FILE = path.join(DATA_DIR, 'notifications.json');
     try {
       if (fs.existsSync(NOTIFICATIONS_FILE)) {
         const data = JSON.parse(fs.readFileSync(NOTIFICATIONS_FILE, 'utf-8'));
@@ -110,6 +85,8 @@ export class SignalDatabaseService {
   }
 
   private saveNotificationConfigs() {
+    const DATA_DIR = path.join(process.cwd(), 'data');
+    const NOTIFICATIONS_FILE = path.join(DATA_DIR, 'notifications.json');
     fs.writeFileSync(NOTIFICATIONS_FILE, JSON.stringify({ configs: this.notificationConfigs }, null, 2));
   }
 

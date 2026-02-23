@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { PopOutButton } from './ui/PopOutButton';
 
 interface SweepResult {
   frequencies: number[];
@@ -175,11 +176,29 @@ export const SpectrumAnalyzer: React.FC = () => {
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Label
+      // Classification badge + label
       ctx.fillStyle = '#ff8888';
       ctx.font = '8px monospace';
       ctx.textAlign = 'center';
       ctx.fillText(`${(sig.frequency / 1e6).toFixed(3)}`, x, y - 8);
+
+      if (sig.classification) {
+        // Classification badge background
+        const label = sig.classification.toUpperCase();
+        const labelW = ctx.measureText(label).width + 6;
+        ctx.fillStyle = 'rgba(0, 200, 120, 0.15)';
+        ctx.strokeStyle = 'rgba(0, 200, 120, 0.5)';
+        ctx.lineWidth = 0.5;
+        const bx = x - labelW / 2;
+        const by = y - 22;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, labelW, 11, 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#00c878';
+        ctx.font = 'bold 7px monospace';
+        ctx.fillText(label, x, by + 8);
+      }
     }
 
     // Cursor
@@ -247,6 +266,7 @@ export const SpectrumAnalyzer: React.FC = () => {
       {/* Controls */}
       <div className="flex items-center gap-3 p-3 border-b border-forge-border bg-forge-surface/50">
         <span className="text-xs font-mono text-forge-cyan tracking-wider">📊 SPECTRUM ANALYZER</span>
+        <PopOutButton view="analyzer" />
 
         <div className="flex items-center gap-1 ml-2">
           <input value={startFreq} onChange={e => setStartFreq(e.target.value)} placeholder="Start MHz"

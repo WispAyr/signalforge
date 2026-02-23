@@ -3,6 +3,7 @@ import GlobeGL, { type GlobeInstance } from 'globe.gl';
 import * as THREE from 'three';
 import type { GlobeConfig, Aircraft, Vessel, TLE, SatellitePosition } from '@signalforge/shared';
 import { useLocationStore } from '../stores/location';
+import { PopOutButton } from './ui/PopOutButton';
 
 interface SatWithPos extends TLE { position: SatellitePosition }
 
@@ -316,6 +317,7 @@ export const GlobeView: React.FC = () => {
       {/* Toolbar */}
       <div className="flex items-center gap-2 p-2 border-b border-forge-border bg-black/80 backdrop-blur-sm z-10">
         <span className="text-cyan-400 font-mono text-sm font-bold">🌍 3D GLOBE</span>
+        <PopOutButton view="globe" />
         <div className="flex-1" />
         {(['showSatellites', 'showAircraft', 'showVessels', 'showEdgeNodes', 'showDayNight', 'showOrbits', 'showAtmosphere', 'showFootprints'] as const).map(key => (
           <button key={key} onClick={() => toggleConfig(key)}

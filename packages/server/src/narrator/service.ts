@@ -1,4 +1,4 @@
-import EventEmitter from 'events';
+import { EventEmitter } from 'events';
 import type { Narration, NarrationRequest, NarratorConfig } from '@signalforge/shared';
 
 interface RFState {

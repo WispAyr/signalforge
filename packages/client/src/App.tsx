@@ -79,8 +79,13 @@ const ViewLoader: React.FC = () => (
 );
 
 export const App: React.FC = () => {
-  const [activeView, setActiveView] = useState<View>('dashboard');
+  const [activeView, setActiveView] = useState<View>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('view');
+    return (v && v in VIEW_MAP) ? v as View : 'dashboard';
+  });
   const [showChat, setShowChat] = useState(false);
+  const isSecondaryWindow = new URLSearchParams(window.location.search).get('role') === 'secondary';
   const { sidebarPinned, sidebarHovered, markViewVisited } = useUIStore();
 
   const sidebarExpanded = sidebarPinned || sidebarHovered;

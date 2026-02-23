@@ -56,6 +56,8 @@ import { IntegrationHubService } from './integrations/service.js';
 import { EquipmentService } from './equipment/service.js';
 import { AaroniaService } from './services/aaronia.js';
 import { WebSDRService } from './sdr/websdr.js';
+import { TimeMachineService } from './timemachine/service.js';
+import { SettingsService } from './services/settings.js';
 import type { DashboardStats, ActivityFeedItem, IntegrationType } from '@signalforge/shared';
 
 const PORT = parseInt(process.env.PORT || '3401');
@@ -148,6 +150,8 @@ const integrationHubService = new IntegrationHubService();
 const equipmentService = new EquipmentService();
 const aaroniaService = new AaroniaService();
 const webSDRService = new WebSDRService();
+const timeMachineService = new TimeMachineService();
+const settingsService = new SettingsService();
 
 const locationService = new LocationService();
 locationService.start();
@@ -216,6 +220,12 @@ frequencyScanner.on('signal_detected', (activity) => {
 signalClassifier.on('classification', (result) => {
   broadcast({ type: 'classification', result });
   timelineService.addEvent({ type: 'classification', title: `${result.classification.toUpperCase()} signal classified`, description: `${(result.frequency / 1e6).toFixed(3)} MHz — ${(result.confidence * 100).toFixed(0)}% confidence`, timestamp: Date.now(), frequency: result.frequency, icon: '🧠', color: '#748ffc' });
+  // Feed classified signals to narrator
+  narratorService.updateRFState({ classifiedSignals: signalClassifier.getResults(10).map(r => ({ freq: r.frequency, classification: r.classification, confidence: r.confidence, bandwidth: r.bandwidth })) });
+});
+
+narratorService.on('narration', (narration) => {
+  broadcast({ type: 'narration', narration });
 });
 
 telemetryService.on('frame', (frame) => {
@@ -1170,8 +1180,31 @@ app.delete('/api/bookmarks/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// --- Recordings ---
-app.get('/api/recordings', (_req, res) => res.json(signalDb.getRecordings()));
+// --- Recordings (SQLite-backed) ---
+app.get('/api/recordings', (_req, res) => res.json(waterfallRecorder.getAllRecordings()));
+app.post('/api/recordings/start', (req, res) => {
+  const { frequency, mode, sampleRate, name } = req.body;
+  res.json(waterfallRecorder.startRecording({ name: name || `Recording ${new Date().toISOString()}`, frequency: frequency || 100e6, mode: mode || 'FM', sampleRate }));
+});
+app.post('/api/recordings/stop', (_req, res) => {
+  const active = waterfallRecorder.getActiveRecordings();
+  if (active.length === 0) return res.status(404).json({ error: 'No active recording' });
+  res.json(waterfallRecorder.stopRecording(active[0].id));
+});
+app.get('/api/recordings/:id/play', (req, res) => {
+  const filePath = waterfallRecorder.getRecordingFilePath(req.params.id);
+  if (!filePath) return res.status(404).json({ error: 'Recording not found' });
+  try {
+    const stat = require('fs').statSync(filePath);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', stat.size);
+    require('fs').createReadStream(filePath).pipe(res);
+  } catch { res.status(404).json({ error: 'File not found' }); }
+});
+app.delete('/api/recordings/:id', (req, res) => {
+  waterfallRecorder.deleteRecording(req.params.id);
+  res.json({ ok: true });
+});
 
 // --- Notifications ---
 app.get('/api/notifications', (req, res) => {
@@ -1502,6 +1535,20 @@ app.get('/api/classifier/config', (_req, res) => {
 app.post('/api/classifier/config', (req, res) => {
   signalClassifier.updateConfig(req.body);
   res.json(signalClassifier.getConfig());
+});
+
+app.post('/api/classifier/analyze', (req, res) => {
+  const { spectrum, centerFreq, sampleRate } = req.body;
+  if (!spectrum || !centerFreq || !sampleRate) return res.status(400).json({ error: 'spectrum, centerFreq, sampleRate required' });
+  const signals = signalClassifier.analyzeSpectrum({ spectrum, centerFreq, sampleRate });
+  res.json({ signals, timestamp: Date.now() });
+});
+
+app.get('/api/classifier/identify', (req, res) => {
+  const freq = parseFloat(req.query.freq as string);
+  const bw = parseFloat(req.query.bw as string);
+  if (isNaN(freq) || isNaN(bw)) return res.status(400).json({ error: 'freq and bw query params required' });
+  res.json(signalClassifier.identifyByCharacteristics(freq, bw));
 });
 
 // ============================================================================
@@ -2056,10 +2103,63 @@ app.get('/api/vdl2/config', (_req, res) => res.json(vdl2Service.getConfig()));
 app.post('/api/vdl2/config', (req, res) => res.json(vdl2Service.updateConfig(req.body)));
 
 // ============================================================================
+// REST API — Time Machine
+// ============================================================================
+app.post('/api/timemachine/load/:recordingId', (req, res) => {
+  const state = timeMachineService.loadRecording(req.params.recordingId);
+  if (!state) return res.status(404).json({ error: 'Recording not found or incomplete' });
+  res.json(state);
+});
+app.post('/api/timemachine/play', (_req, res) => {
+  const state = timeMachineService.play();
+  if (!state) return res.status(400).json({ error: 'No recording loaded' });
+  res.json(state);
+});
+app.post('/api/timemachine/pause', (_req, res) => {
+  const state = timeMachineService.pause();
+  if (!state) return res.status(400).json({ error: 'No recording loaded' });
+  res.json(state);
+});
+app.post('/api/timemachine/stop', (_req, res) => {
+  const state = timeMachineService.stop();
+  res.json(state || { status: 'stopped' });
+});
+app.post('/api/timemachine/seek', (req, res) => {
+  const position = parseFloat(req.query.position as string || req.body.position);
+  if (isNaN(position)) return res.status(400).json({ error: 'position required (0-1)' });
+  const state = timeMachineService.seek(position);
+  if (!state) return res.status(400).json({ error: 'No recording loaded' });
+  res.json(state);
+});
+app.get('/api/timemachine/state', (_req, res) => {
+  res.json(timeMachineService.getState() || { status: 'idle' });
+});
+
+// ============================================================================
+// REST API — Settings Persistence
+// ============================================================================
+app.get('/api/settings', (_req, res) => {
+  res.json(settingsService.getAll());
+});
+app.put('/api/settings', (req, res) => {
+  settingsService.setAll(req.body);
+  res.json({ ok: true });
+});
+app.get('/api/settings/:key', (req, res) => {
+  res.json({ key: req.params.key, value: settingsService.get(req.params.key) });
+});
+app.put('/api/settings/:key', (req, res) => {
+  settingsService.set(req.params.key, req.body.value);
+  res.json({ ok: true });
+});
+
+// ============================================================================
 // REST API — Phase 8: AI Signal Narrator
 // ============================================================================
 app.post('/api/narrator/narrate', (req, res) => res.json(narratorService.narrate(req.body)));
 app.get('/api/narrator/narrations', (req, res) => res.json(narratorService.getNarrations(parseInt(req.query.limit as string) || 50)));
+app.get('/api/narrator/current', (_req, res) => res.json({ narration: narratorService.getCurrentNarration(), timestamp: Date.now() }));
+app.post('/api/narrator/ask', async (req, res) => { try { const result = await narratorService.ask(req.body.question || ''); res.json(result); } catch (e: any) { res.status(500).json({ error: e.message }); } });
 app.get('/api/narrator/config', (_req, res) => res.json(narratorService.getConfig()));
 app.post('/api/narrator/config', (req, res) => res.json(narratorService.updateConfig(req.body)));
 
