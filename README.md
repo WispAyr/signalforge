@@ -37,22 +37,37 @@ SignalForge is a **visual, node-based radio signal processing platform** that ru
 
 <p align="center">
   <img src="docs/screenshots/dashboard.jpg" alt="Operations Dashboard" width="800"/>
-  <br/><em>Operations Center — live activity feed, quick launch, system status</em>
+  <br/><em>Operations Center — live activity feed, quick launch, system metrics</em>
 </p>
 
 <p align="center">
   <img src="docs/screenshots/globe.jpg" alt="3D Globe" width="800"/>
-  <br/><em>3D Globe — real satellite positions, aircraft, vessels on interactive Earth</em>
+  <br/><em>3D Globe — night Earth, aircraft & vessel tracks, satellite orbits, starfield</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/spectrum.jpg" alt="Spectrum & Waterfall" width="800"/>
+  <br/><em>Spectrum Analyzer — real-time waterfall display with FM broadcast signals</em>
 </p>
 
 <p align="center">
   <img src="docs/screenshots/flow-editor.jpg" alt="Flow Editor" width="800"/>
-  <br/><em>Flow Editor — visual signal processing pipelines, drag-and-drop</em>
+  <br/><em>Flow Editor — 25+ node types, drag-and-drop signal processing pipelines</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/waterfall.jpg" alt="Spectrum Analyzer" width="800"/>
-  <br/><em>Spectrum Analyzer — waterfall display with signal markers</em>
+  <img src="docs/screenshots/signals.jpg" alt="Signal Guide" width="800"/>
+  <br/><em>Signal Guide — frequency database with categories, modes, and descriptions</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/satellites.jpg" alt="SatNOGS Integration" width="800"/>
+  <br/><em>SatNOGS Network — real observation data, ground station search</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/sdr.jpg" alt="SDR Control" width="800"/>
+  <br/><em>SDR Control — RTL-TCP connection, tuning, gain, quick-tune presets</em>
 </p>
 
 ---
