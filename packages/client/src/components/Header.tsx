@@ -1,6 +1,6 @@
 import React from 'react';
 
-type View = 'flow' | 'waterfall' | 'map' | 'split';
+type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'split';
 
 interface HeaderProps {
   activeView: View;
@@ -8,6 +8,7 @@ interface HeaderProps {
 }
 
 const views: { id: View; label: string; icon: string }[] = [
+  { id: 'dashboard', label: 'OPS', icon: '⬡' },
   { id: 'flow', label: 'FLOW', icon: '◇' },
   { id: 'waterfall', label: 'SPECTRUM', icon: '≋' },
   { id: 'map', label: 'MAP', icon: '◎' },
@@ -49,10 +50,9 @@ export const Header: React.FC<HeaderProps> = ({ activeView, onViewChange }) => {
       <div className="ml-auto flex items-center gap-4 text-xs text-forge-text-dim font-mono">
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-forge-green animate-pulse-slow" />
-          DEMO SDR
+          OPERATIONAL
         </span>
-        <span>100.000 MHz</span>
-        <span>2.4 MS/s</span>
+        <span>55.46°N 4.63°W</span>
       </div>
     </header>
   );

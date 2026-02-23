@@ -5,20 +5,22 @@ import { WaterfallView } from './components/WaterfallView';
 import { MapView } from './components/MapView';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
+import { Dashboard } from './components/Dashboard';
 
-type View = 'flow' | 'waterfall' | 'map' | 'split';
+type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'split';
 
 export const App: React.FC = () => {
-  const [activeView, setActiveView] = useState<View>('flow');
+  const [activeView, setActiveView] = useState<View>('dashboard');
 
   return (
     <div className="h-screen w-screen flex flex-col bg-forge-bg grid-overlay overflow-hidden">
       <Header activeView={activeView} onViewChange={setActiveView} />
 
       <div className="flex-1 flex overflow-hidden">
-        <Sidebar />
+        {activeView !== 'dashboard' && <Sidebar />}
 
         <main className="flex-1 overflow-hidden relative">
+          {activeView === 'dashboard' && <Dashboard onNavigate={setActiveView} />}
           {activeView === 'flow' && <FlowEditor />}
           {activeView === 'waterfall' && <WaterfallView />}
           {activeView === 'map' && <MapView />}

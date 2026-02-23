@@ -1,67 +1,83 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { COLORMAPS } from '@signalforge/shared';
+import type { ColormapName } from '@signalforge/shared';
 
-/**
- * GPU-accelerated waterfall display.
- * Falls back to Canvas 2D when WebGPU is unavailable.
- * Renders FFT data as a scrolling spectrogram with configurable colormap.
- */
 export const WaterfallView: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const spectrumRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
   const fftHistory = useRef<Float32Array[]>([]);
-  const fftSize = 2048;
 
-  // Generate demo FFT data
+  const [fftSize, setFftSize] = useState(2048);
+  const [colormap, setColormap] = useState<ColormapName>('cyan');
+  const [minDb, setMinDb] = useState(-110);
+  const [maxDb, setMaxDb] = useState(-40);
+  const [centerFreq, setCenterFreq] = useState(100e6);
+  const [bandwidth, setBandwidth] = useState(2.4e6);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Generate demo FFT data with more realistic signals
   const generateDemoFFT = useCallback((): Float32Array => {
     const data = new Float32Array(fftSize);
     const time = Date.now() / 1000;
 
     for (let i = 0; i < fftSize; i++) {
-      // Noise floor
-      data[i] = -100 + Math.random() * 8;
-
-      // Signals at various points
       const freq = i / fftSize;
+      // Noise floor with slight slope
+      data[i] = -100 + Math.random() * 6 + (freq - 0.5) * 4;
 
-      // Strong FM station
-      const fm1 = Math.exp(-Math.pow((freq - 0.3) * 100, 2));
-      data[i] += fm1 * (40 + 5 * Math.sin(time * 0.5));
+      // Strong FM broadcast stations
+      const fm1 = Math.exp(-Math.pow((freq - 0.25) * 80, 2));
+      data[i] += fm1 * (42 + 3 * Math.sin(time * 0.3));
 
-      // Weak signal
-      const sig2 = Math.exp(-Math.pow((freq - 0.55) * 200, 2));
-      data[i] += sig2 * 20;
+      const fm2 = Math.exp(-Math.pow((freq - 0.33) * 90, 2));
+      data[i] += fm2 * (38 + 4 * Math.sin(time * 0.4 + 1));
 
-      // Pulsing signal
-      const sig3 = Math.exp(-Math.pow((freq - 0.7) * 150, 2));
-      data[i] += sig3 * (30 * Math.abs(Math.sin(time * 2)));
+      const fm3 = Math.exp(-Math.pow((freq - 0.48) * 85, 2));
+      data[i] += fm3 * (35 + 5 * Math.sin(time * 0.5 + 2));
 
-      // Wideband noise burst
-      if (freq > 0.15 && freq < 0.2) {
-        data[i] += 10 + Math.random() * 5 * Math.max(0, Math.sin(time * 0.3));
+      // Narrowband digital signal
+      const nb1 = Math.exp(-Math.pow((freq - 0.55) * 300, 2));
+      data[i] += nb1 * (25 + Math.random() * 8);
+
+      // Pulsing beacon
+      const beacon = Math.exp(-Math.pow((freq - 0.65) * 400, 2));
+      data[i] += beacon * (30 * Math.max(0, Math.sin(time * 3)));
+
+      // Wideband spread spectrum
+      if (freq > 0.72 && freq < 0.78) {
+        data[i] += (8 + Math.random() * 6) * (0.5 + 0.5 * Math.sin(time * 0.2));
       }
 
       // Sweeping signal
-      const sweepPos = 0.4 + 0.1 * Math.sin(time * 0.7);
-      const sweep = Math.exp(-Math.pow((freq - sweepPos) * 300, 2));
-      data[i] += sweep * 25;
+      const sweepPos = 0.15 + 0.08 * Math.sin(time * 0.4);
+      const sweep = Math.exp(-Math.pow((freq - sweepPos) * 250, 2));
+      data[i] += sweep * 20;
+
+      // Intermittent burst
+      if (Math.sin(time * 0.8 + 3) > 0.7) {
+        const burst = Math.exp(-Math.pow((freq - 0.85) * 150, 2));
+        data[i] += burst * 28;
+      }
+
+      // Harmonic comb (like digital TV)
+      for (let h = 0; h < 5; h++) {
+        const hp = 0.38 + h * 0.012;
+        const harm = Math.exp(-Math.pow((freq - hp) * 500, 2));
+        data[i] += harm * (15 - h * 2);
+      }
     }
-
     return data;
-  }, []);
+  }, [fftSize]);
 
-  // Color mapping
-  const getColor = useCallback((db: number, minDb: number, maxDb: number): [number, number, number] => {
-    const t = Math.max(0, Math.min(1, (db - minDb) / (maxDb - minDb)));
-    const colors = COLORMAPS.cyan.colors;
+  const getColor = useCallback((db: number, mn: number, mx: number, cmap: ColormapName): [number, number, number] => {
+    const t = Math.max(0, Math.min(1, (db - mn) / (mx - mn)));
+    const colors = COLORMAPS[cmap].colors;
     const idx = t * (colors.length - 1);
     const i = Math.floor(idx);
     const frac = idx - i;
-
     const c1 = hexToRgb(colors[Math.min(i, colors.length - 1)]);
     const c2 = hexToRgb(colors[Math.min(i + 1, colors.length - 1)]);
-
     return [
       Math.round(c1[0] + (c2[0] - c1[0]) * frac),
       Math.round(c1[1] + (c2[1] - c1[1]) * frac),
@@ -69,8 +85,23 @@ export const WaterfallView: React.FC = () => {
     ];
   }, []);
 
+  const formatFreq = (hz: number): string => {
+    if (hz >= 1e9) return `${(hz / 1e9).toFixed(3)} GHz`;
+    if (hz >= 1e6) return `${(hz / 1e6).toFixed(3)} MHz`;
+    if (hz >= 1e3) return `${(hz / 1e3).toFixed(1)} kHz`;
+    return `${hz.toFixed(0)} Hz`;
+  };
+
+  // Click to tune
+  const handleWaterfallClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = e.currentTarget;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const freqOffset = (x - 0.5) * bandwidth;
+    setCenterFreq(prev => prev + freqOffset);
+  }, [bandwidth]);
+
   const render = useCallback(() => {
-    // Waterfall canvas
     const canvas = canvasRef.current;
     const specCanvas = spectrumRef.current;
     if (!canvas || !specCanvas) return;
@@ -83,7 +114,6 @@ export const WaterfallView: React.FC = () => {
     const rect = canvas.parentElement?.getBoundingClientRect();
     if (!rect) return;
 
-    // Waterfall takes bottom 70%, spectrum top 30%
     const specHeight = Math.floor(rect.height * 0.3);
     const wfHeight = Math.floor(rect.height * 0.7);
 
@@ -97,17 +127,11 @@ export const WaterfallView: React.FC = () => {
     canvas.style.width = `${rect.width}px`;
     canvas.style.height = `${wfHeight}px`;
 
-    // Generate new FFT line
     const fftData = generateDemoFFT();
     fftHistory.current.unshift(fftData);
-    if (fftHistory.current.length > wfHeight) {
-      fftHistory.current.pop();
-    }
+    if (fftHistory.current.length > wfHeight) fftHistory.current.pop();
 
-    const minDb = -110;
-    const maxDb = -40;
-
-    // --- Render Waterfall ---
+    // --- Waterfall ---
     ctx.save();
     ctx.scale(dpr, dpr);
 
@@ -118,105 +142,128 @@ export const WaterfallView: React.FC = () => {
       const row = fftHistory.current[y];
       for (let x = 0; x < rect.width; x++) {
         const bin = Math.floor((x / rect.width) * fftSize);
-        const [r, g, b] = getColor(row[bin], minDb, maxDb);
+        const [r, g, b] = getColor(row[bin], minDb, maxDb, colormap);
         const idx = (y * rect.width + x) * 4;
-        pixels[idx] = r;
-        pixels[idx + 1] = g;
-        pixels[idx + 2] = b;
-        pixels[idx + 3] = 255;
+        pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
       }
     }
-
     ctx.putImageData(imgData, 0, 0);
 
-    // Frequency labels
-    ctx.fillStyle = 'rgba(0, 229, 255, 0.5)';
-    ctx.font = `${10 * dpr}px "JetBrains Mono"`;
-    // (simplified)
-
+    // dB scale on left
+    ctx.fillStyle = 'rgba(6, 6, 16, 0.7)';
+    ctx.fillRect(0, 0, 40, wfHeight);
+    for (let db = minDb; db <= maxDb; db += 10) {
+      const y = wfHeight - ((db - minDb) / (maxDb - minDb)) * wfHeight;
+      ctx.fillStyle = 'rgba(0, 229, 255, 0.3)';
+      ctx.font = '8px "JetBrains Mono"';
+      ctx.fillText(`${db}`, 2, y);
+    }
     ctx.restore();
 
-    // --- Render Spectrum ---
+    // --- Spectrum ---
     specCtx.save();
     specCtx.scale(dpr, dpr);
-    specCtx.fillStyle = '#0a0a0f';
+    specCtx.fillStyle = '#060610';
     specCtx.fillRect(0, 0, rect.width, specHeight);
 
-    // Grid lines
-    specCtx.strokeStyle = 'rgba(0, 229, 255, 0.08)';
-    specCtx.lineWidth = 0.5;
+    // Horizontal grid + dB labels
     for (let db = minDb; db <= maxDb; db += 10) {
       const y = specHeight - ((db - minDb) / (maxDb - minDb)) * specHeight;
-      specCtx.beginPath();
-      specCtx.moveTo(0, y);
-      specCtx.lineTo(rect.width, y);
-      specCtx.stroke();
-
-      specCtx.fillStyle = 'rgba(0, 229, 255, 0.3)';
+      specCtx.strokeStyle = 'rgba(0, 229, 255, 0.06)';
+      specCtx.lineWidth = 0.5;
+      specCtx.beginPath(); specCtx.moveTo(40, y); specCtx.lineTo(rect.width, y); specCtx.stroke();
+      specCtx.fillStyle = 'rgba(0, 229, 255, 0.4)';
       specCtx.font = '9px "JetBrains Mono"';
-      specCtx.fillText(`${db} dB`, 4, y - 2);
+      specCtx.fillText(`${db}`, 4, y - 2);
     }
 
-    // Spectrum line
+    // Vertical grid + freq labels
+    const freqStep = bandwidth / 10;
+    for (let i = 0; i <= 10; i++) {
+      const x = (i / 10) * rect.width;
+      specCtx.strokeStyle = 'rgba(0, 229, 255, 0.04)';
+      specCtx.beginPath(); specCtx.moveTo(x, 0); specCtx.lineTo(x, specHeight); specCtx.stroke();
+    }
+
+    // Max-hold (average of recent)
+    if (fftHistory.current.length > 5) {
+      specCtx.beginPath();
+      specCtx.strokeStyle = 'rgba(255, 171, 0, 0.3)';
+      specCtx.lineWidth = 1;
+      for (let x = 0; x < rect.width; x++) {
+        const bin = Math.floor((x / rect.width) * fftSize);
+        let maxVal = -999;
+        for (let h = 0; h < Math.min(30, fftHistory.current.length); h++) {
+          maxVal = Math.max(maxVal, fftHistory.current[h][bin]);
+        }
+        const y = specHeight - ((maxVal - minDb) / (maxDb - minDb)) * specHeight;
+        if (x === 0) specCtx.moveTo(x, y); else specCtx.lineTo(x, y);
+      }
+      specCtx.stroke();
+    }
+
+    // Current spectrum line
     specCtx.beginPath();
-    specCtx.strokeStyle = '#00e5ff';
+    specCtx.strokeStyle = COLORMAPS[colormap].colors[6] || '#00e5ff';
     specCtx.lineWidth = 1.5;
-    specCtx.shadowColor = 'rgba(0, 229, 255, 0.5)';
+    specCtx.shadowColor = COLORMAPS[colormap].colors[6] || '#00e5ff';
     specCtx.shadowBlur = 4;
 
     for (let x = 0; x < rect.width; x++) {
       const bin = Math.floor((x / rect.width) * fftSize);
-      const db = fftData[bin];
-      const y = specHeight - ((db - minDb) / (maxDb - minDb)) * specHeight;
-      if (x === 0) specCtx.moveTo(x, y);
-      else specCtx.lineTo(x, y);
+      const y = specHeight - ((fftData[bin] - minDb) / (maxDb - minDb)) * specHeight;
+      if (x === 0) specCtx.moveTo(x, y); else specCtx.lineTo(x, y);
     }
     specCtx.stroke();
     specCtx.shadowBlur = 0;
 
-    // Fill under the line
+    // Fill under
     specCtx.lineTo(rect.width, specHeight);
     specCtx.lineTo(0, specHeight);
     specCtx.closePath();
     const gradient = specCtx.createLinearGradient(0, 0, 0, specHeight);
-    gradient.addColorStop(0, 'rgba(0, 229, 255, 0.15)');
-    gradient.addColorStop(1, 'rgba(0, 229, 255, 0.01)');
+    gradient.addColorStop(0, (COLORMAPS[colormap].colors[6] || '#00e5ff') + '25');
+    gradient.addColorStop(1, (COLORMAPS[colormap].colors[6] || '#00e5ff') + '02');
     specCtx.fillStyle = gradient;
     specCtx.fill();
 
     // Center frequency marker
-    specCtx.strokeStyle = 'rgba(255, 171, 0, 0.5)';
+    specCtx.strokeStyle = 'rgba(255, 171, 0, 0.6)';
     specCtx.lineWidth = 1;
     specCtx.setLineDash([4, 4]);
     specCtx.beginPath();
-    specCtx.moveTo(rect.width / 2, 0);
-    specCtx.lineTo(rect.width / 2, specHeight);
+    specCtx.moveTo(rect.width / 2, 0); specCtx.lineTo(rect.width / 2, specHeight);
     specCtx.stroke();
     specCtx.setLineDash([]);
 
-    specCtx.fillStyle = 'rgba(255, 171, 0, 0.8)';
+    specCtx.fillStyle = 'rgba(255, 171, 0, 0.9)';
     specCtx.font = '10px "JetBrains Mono"';
-    specCtx.fillText('100.000 MHz', rect.width / 2 + 4, 14);
+    specCtx.fillText(formatFreq(centerFreq), rect.width / 2 + 6, 14);
 
     specCtx.restore();
 
     animRef.current = requestAnimationFrame(render);
-  }, [generateDemoFFT, getColor]);
+  }, [generateDemoFFT, getColor, minDb, maxDb, centerFreq, bandwidth, fftSize, colormap]);
 
   useEffect(() => {
     animRef.current = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animRef.current);
   }, [render]);
 
+  // Frequency scale labels
+  const freqLabels: string[] = [];
+  for (let i = 0; i <= 4; i++) {
+    const f = centerFreq - bandwidth / 2 + (bandwidth * i) / 4;
+    freqLabels.push(formatFreq(f));
+  }
+
   return (
     <div className="h-full w-full flex flex-col bg-forge-bg relative">
       {/* Frequency scale */}
       <div className="h-6 flex items-center justify-between px-4 text-[9px] font-mono text-forge-cyan-dim border-b border-forge-border">
-        <span>98.800 MHz</span>
-        <span>99.400 MHz</span>
-        <span className="text-forge-amber">100.000 MHz</span>
-        <span>100.600 MHz</span>
-        <span>101.200 MHz</span>
+        {freqLabels.map((label, i) => (
+          <span key={i} className={i === 2 ? 'text-forge-amber' : ''}>{label}</span>
+        ))}
       </div>
 
       {/* Spectrum display */}
@@ -226,15 +273,94 @@ export const WaterfallView: React.FC = () => {
 
       {/* Waterfall display */}
       <div className="flex-1 relative border-t border-forge-border/50">
-        <canvas ref={canvasRef} className="absolute inset-0" />
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 cursor-crosshair"
+          onClick={handleWaterfallClick}
+        />
       </div>
 
       {/* Controls overlay */}
-      <div className="absolute bottom-3 right-3 flex gap-2 text-[10px] font-mono">
+      <div className="absolute bottom-3 right-3 flex gap-2 text-[10px] font-mono z-10">
+        <button
+          onClick={() => setShowSettings(!showSettings)}
+          className="bg-forge-bg/90 border border-forge-border px-3 py-1.5 rounded text-forge-text-dim hover:text-forge-cyan hover:border-forge-cyan/30 transition-all"
+        >
+          ⚙ Settings
+        </button>
         <span className="bg-forge-bg/90 border border-forge-border px-2 py-1 rounded text-forge-text-dim">
-          FFT: 2048 · Cyan Forge · -110 to -40 dB
+          FFT: {fftSize} · {COLORMAPS[colormap].name} · {minDb} to {maxDb} dB
         </span>
       </div>
+
+      {/* Settings panel */}
+      {showSettings && (
+        <div className="absolute bottom-12 right-3 w-64 panel-border rounded-lg p-4 z-20 space-y-3">
+          <h3 className="text-xs font-mono tracking-wider text-forge-cyan">WATERFALL SETTINGS</h3>
+
+          <div>
+            <label className="text-[10px] font-mono text-forge-text-dim">FFT Size</label>
+            <select
+              value={fftSize}
+              onChange={(e) => { setFftSize(parseInt(e.target.value)); fftHistory.current = []; }}
+              className="w-full bg-forge-bg border border-forge-border rounded px-2 py-1 text-xs text-forge-text mt-1"
+            >
+              {[512, 1024, 2048, 4096, 8192].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-mono text-forge-text-dim">Color Map</label>
+            <div className="flex gap-1 mt-1">
+              {(Object.keys(COLORMAPS) as ColormapName[]).map(cm => (
+                <button
+                  key={cm}
+                  onClick={() => setColormap(cm)}
+                  className={`flex-1 py-1 rounded text-[9px] font-mono border transition-all ${
+                    colormap === cm ? 'border-forge-cyan text-forge-cyan' : 'border-forge-border text-forge-text-dim'
+                  }`}
+                >
+                  {COLORMAPS[cm].name.slice(0, 6)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-mono text-forge-text-dim">dB Range: {minDb} to {maxDb}</label>
+            <div className="flex gap-2 mt-1">
+              <input type="range" min="-140" max="-60" value={minDb} onChange={e => setMinDb(parseInt(e.target.value))} className="flex-1 h-1" />
+              <input type="range" min="-80" max="0" value={maxDb} onChange={e => setMaxDb(parseInt(e.target.value))} className="flex-1 h-1" />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-mono text-forge-text-dim">Center Frequency</label>
+            <input
+              type="text"
+              value={formatFreq(centerFreq)}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val)) setCenterFreq(val * 1e6);
+              }}
+              className="w-full bg-forge-bg border border-forge-border rounded px-2 py-1 text-xs text-forge-text mt-1"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-mono text-forge-text-dim">Bandwidth</label>
+            <select
+              value={bandwidth}
+              onChange={(e) => setBandwidth(parseFloat(e.target.value))}
+              className="w-full bg-forge-bg border border-forge-border rounded px-2 py-1 text-xs text-forge-text mt-1"
+            >
+              {[250e3, 500e3, 1e6, 2e6, 2.4e6, 5e6, 10e6].map(bw => (
+                <option key={bw} value={bw}>{formatFreq(bw)}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

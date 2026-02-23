@@ -108,7 +108,7 @@ export class SatelliteService {
           observerGd,
           satellite.eciToEcf(posVel.position, gmst)
         );
-        const elDeg = satellite.radiansToDegrees(lookAngles.elevation);
+        const elDeg = (satellite as any).radiansToDegrees(lookAngles.elevation);
 
         if (elDeg > 0) {
           if (!inPass) {
@@ -140,6 +140,71 @@ export class SatelliteService {
 
       // Limit passes per satellite
       if (passes.length > 200) break;
+    }
+
+    return passes.sort((a, b) => a.aos.getTime() - b.aos.getTime());
+  }
+
+  async predictPassesForSat(catalogNumber: number, observer: GroundStation, hours: number = 24): Promise<SatellitePass[]> {
+    if (!this.loaded) await this.loadTLEs();
+
+    const sat = this.satellites.get(catalogNumber);
+    if (!sat) return [];
+
+    const passes: SatellitePass[] = [];
+    const observerGd = {
+      longitude: satellite.degreesToRadians(observer.longitude),
+      latitude: satellite.degreesToRadians(observer.latitude),
+      height: observer.altitude / 1000,
+    };
+
+    const now = new Date();
+    const end = new Date(now.getTime() + hours * 3600000);
+    const step = 30000; // 30-second steps for better precision
+
+    let inPass = false;
+    let passStart = now;
+    let maxEl = 0;
+    let maxElTime = now;
+
+    for (let t = now.getTime(); t < end.getTime(); t += step) {
+      const time = new Date(t);
+      const posVel = satellite.propagate(sat.satrec, time);
+      if (typeof posVel.position === 'boolean') continue;
+
+      const gmst = satellite.gstime(time);
+      const lookAngles = satellite.ecfToLookAngles(
+        observerGd,
+        satellite.eciToEcf(posVel.position, gmst)
+      );
+      const elDeg = (satellite as any).radiansToDegrees(lookAngles.elevation);
+
+      if (elDeg > 0) {
+        if (!inPass) {
+          inPass = true;
+          passStart = time;
+          maxEl = elDeg;
+          maxElTime = time;
+        }
+        if (elDeg > maxEl) {
+          maxEl = elDeg;
+          maxElTime = time;
+        }
+      } else if (inPass) {
+        inPass = false;
+        if (maxEl > 2) {
+          passes.push({
+            satellite: sat.tle.name,
+            aos: passStart,
+            los: time,
+            tca: maxElTime,
+            maxElevation: maxEl,
+            aosAzimuth: 0,
+            losAzimuth: 0,
+            duration: (time.getTime() - passStart.getTime()) / 1000,
+          });
+        }
+      }
     }
 
     return passes.sort((a, b) => a.aos.getTime() - b.aos.getTime());

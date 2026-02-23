@@ -25,6 +25,7 @@ const NODE_PALETTE: NodePaletteItem[] = [
   { type: 'ssb_demod', name: 'SSB Demod', category: 'demodulator', icon: 'SSB', color: '#ffab00' },
   // Decoders
   { type: 'adsb_decoder', name: 'ADS-B', category: 'decoder', icon: '✈️', color: '#aa00ff' },
+  { type: 'acars_decoder', name: 'ACARS', category: 'decoder', icon: '📡', color: '#aa00ff' },
   { type: 'ais_decoder', name: 'AIS', category: 'decoder', icon: '🚢', color: '#aa00ff' },
   { type: 'aprs_decoder', name: 'APRS', category: 'decoder', icon: '📍', color: '#aa00ff' },
   { type: 'apt_decoder', name: 'NOAA APT', category: 'decoder', icon: '🌦️', color: '#aa00ff' },
