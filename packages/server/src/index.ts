@@ -54,6 +54,7 @@ import { AcademyService } from './academy/service.js';
 import { HistoryService } from './history/service.js';
 import { IntegrationHubService } from './integrations/service.js';
 import { EquipmentService } from './equipment/service.js';
+import { AaroniaService } from './services/aaronia.js';
 import type { DashboardStats, ActivityFeedItem, IntegrationType } from '@signalforge/shared';
 
 const PORT = parseInt(process.env.PORT || '3401');
@@ -144,6 +145,7 @@ const academyService = new AcademyService();
 const historyService = new HistoryService();
 const integrationHubService = new IntegrationHubService();
 const equipmentService = new EquipmentService();
+const aaroniaService = new AaroniaService();
 
 const locationService = new LocationService();
 locationService.start();
@@ -2091,6 +2093,57 @@ app.get('/api/equipment/compatible/:decoder', (req, res) => res.json(equipmentSe
 app.post('/api/equipment/shopping-list', (req, res) => res.json(equipmentService.getShoppingList(req.body.capabilities || [])));
 
 // ============================================================================
+// REST API — Aaronia Spectran V6
+// ============================================================================
+app.get('/api/aaronia/status', (_req, res) => res.json(aaroniaService.getStatus()));
+app.get('/api/aaronia/models', (_req, res) => res.json(aaroniaService.getModels()));
+app.get('/api/aaronia/tscm-profiles', (_req, res) => res.json(aaroniaService.getTSCMProfiles()));
+app.post('/api/aaronia/connect', async (req, res) => {
+  try {
+    const device = await aaroniaService.connect(req.body.host || '127.0.0.1', req.body.port || 54664);
+    res.json(device);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+app.post('/api/aaronia/disconnect', (_req, res) => {
+  aaroniaService.disconnect();
+  res.json({ ok: true });
+});
+app.post('/api/aaronia/sweep', async (req, res) => {
+  try {
+    const result = await aaroniaService.startSweep(req.body);
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+app.post('/api/aaronia/sweep/stop', (_req, res) => {
+  aaroniaService.stopSweep();
+  res.json({ ok: true });
+});
+app.post('/api/aaronia/tscm/:profile', (req, res) => {
+  try {
+    const result = aaroniaService.runTSCMProfile(req.params.profile);
+    res.json(result);
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+app.get('/api/aaronia/discover', async (_req, res) => {
+  const devices = await aaroniaService.discover();
+  res.json(devices);
+});
+
+// Forward Aaronia sweep events over WebSocket
+aaroniaService.on('sweep_complete', (result) => {
+  broadcast({ type: 'aaronia_sweep', result });
+});
+aaroniaService.on('connected', (device) => {
+  broadcast({ type: 'aaronia_connected', device });
+});
+
+// ============================================================================
 // REST API — Themes (serve theme list; actual theming is client-side)
 // ============================================================================
 app.get('/api/themes', (_req, res) => {
@@ -2354,7 +2407,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`
   ⚡ ╔═══════════════════════════════════════╗
   ⚡ ║         S I G N A L F O R G E         ║
-  ⚡ ║     Universal Radio Platform v0.7     ║
+  ⚡ ║    Universal Radio Platform v0.10      ║
   ⚡ ╠═══════════════════════════════════════╣
   ⚡ ║  HTTP:  http://0.0.0.0:${PORT}            ║
   ⚡ ║  WS:    ws://0.0.0.0:${PORT}/ws           ║

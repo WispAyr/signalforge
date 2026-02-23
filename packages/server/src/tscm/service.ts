@@ -22,6 +22,46 @@ const SWEEP_BANDS = [
   { name: 'GSM 1800', start: 1710e6, end: 1880e6 }, { name: 'WiFi 2.4G', start: 2400e6, end: 2500e6 },
 ];
 
+// Aaronia Spectran V6 TSCM sweep profiles — industry standard for bug detection
+const AARONIA_TSCM_PROFILES = {
+  'aaronia-room-sweep': {
+    name: 'Aaronia Room Sweep',
+    description: 'Full 1Hz–6GHz sweep using Spectran V6 for comprehensive room bug detection',
+    bands: [
+      { name: 'HF', start: 1, end: 30e6 },
+      { name: 'VHF', start: 30e6, end: 300e6 },
+      { name: 'UHF', start: 300e6, end: 1e9 },
+      { name: 'Microwave', start: 1e9, end: 6e9 },
+    ],
+    rbw: 10e3,
+    detector: 'peak' as const,
+    hardware: 'aaronia-spectran-v6',
+  },
+  'aaronia-emc-pre': {
+    name: 'Aaronia EMC Pre-Compliance',
+    description: 'EMC pre-compliance testing per CISPR/EN standards with Spectran V6',
+    bands: [
+      { name: 'Band A (9kHz–150kHz)', start: 9e3, end: 150e3 },
+      { name: 'Band B (150kHz–30MHz)', start: 150e3, end: 30e6 },
+      { name: 'Band C (30MHz–300MHz)', start: 30e6, end: 300e6 },
+      { name: 'Band D (300MHz–1GHz)', start: 300e6, end: 1e9 },
+    ],
+    rbw: 9e3,
+    detector: 'peak' as const,
+    hardware: 'aaronia-spectran-v6',
+  },
+  'aaronia-nearfield': {
+    name: 'Aaronia Near-Field Probe Sweep',
+    description: 'Close-range sweep using Aaronia near-field probes for hidden transmitter localisation',
+    bands: [
+      { name: 'Full Range', start: 1e6, end: 6e9 },
+    ],
+    rbw: 1e3,
+    detector: 'rms' as const,
+    hardware: 'aaronia-spectran-v6 + near-field probe set',
+  },
+};
+
 export class TSCMService extends EventEmitter {
   private baselines: TSCMBaseline[] = [];
   private sweepResults: TSCMSweepResult[] = [];
@@ -39,6 +79,7 @@ export class TSCMService extends EventEmitter {
   getAnomalies(limit = 100): TSCMAnomaly[] { return this.anomalies.slice(0, limit); }
   getReports(): TSCMReport[] { return this.reports; }
   getKnownBugs(): KnownBugFrequency[] { return KNOWN_BUGS; }
+  getAaroniaProfiles() { return AARONIA_TSCM_PROFILES; }
 
   acknowledgeAnomaly(id: string): boolean {
     const a = this.anomalies.find(a => a.id === id);

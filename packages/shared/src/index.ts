@@ -48,3 +48,4 @@ export * from './history';
 export * from './integrations';
 export * from './equipment';
 export * from './cinematic';
+export * from './aaronia';

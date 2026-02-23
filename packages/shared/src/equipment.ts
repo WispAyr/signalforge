@@ -1,6 +1,6 @@
 // Phase 8: Equipment Manager types
 
-export type SDRHardwareType = 'rtlsdr' | 'hackrf' | 'airspy' | 'sdrplay' | 'limesdr' | 'usrp' | 'kiwisdr';
+export type SDRHardwareType = 'rtlsdr' | 'hackrf' | 'airspy' | 'sdrplay' | 'limesdr' | 'usrp' | 'kiwisdr' | 'aaronia';
 
 export interface SDRHardware {
   id: SDRHardwareType;
@@ -49,4 +49,5 @@ export const SDR_DATABASE: SDRHardware[] = [
   { id: 'limesdr', name: 'LimeSDR Mini 2.0', manufacturer: 'Lime Microsystems', frequencyRange: [10000000, 3500000000], maxBandwidthHz: 30720000, bitsADC: 12, txCapable: true, price: '£200-300', driverRequired: 'limesdr', supportedDecoders: ['adsb', 'acars', 'ais', 'aprs', 'fm', 'am', 'ssb', 'pocsag', 'lora', 'dmr'], features: ['Full duplex TX/RX', 'MIMO', 'Wide bandwidth', 'FPGA based'] },
   { id: 'usrp', name: 'Ettus USRP B210', manufacturer: 'Ettus Research', frequencyRange: [70000000, 6000000000], maxBandwidthHz: 56000000, bitsADC: 12, txCapable: true, price: '£1500+', driverRequired: 'uhd', supportedDecoders: ['adsb', 'acars', 'ais', 'aprs', 'fm', 'am', 'ssb', 'pocsag', 'lora', 'dmr', 'bluetooth', 'wifi'], features: ['Professional grade', '2x2 MIMO', '56 MHz bandwidth', 'Full duplex'] },
   { id: 'kiwisdr', name: 'KiwiSDR', manufacturer: 'KiwiSDR', frequencyRange: [10000, 30000000], maxBandwidthHz: 30000000, bitsADC: 14, txCapable: false, price: '£250-300', driverRequired: 'none (web)', supportedDecoders: ['am', 'ssb', 'fm', 'aprs', 'sstv'], features: ['Web-based', 'HF coverage', '14-bit ADC', 'GPS disciplined', 'Multi-user'] },
+  { id: 'aaronia', name: 'Aaronia Spectran V6', manufacturer: 'Aaronia AG', frequencyRange: [1, 6000000000], maxBandwidthHz: 245000000, bitsADC: 16, txCapable: false, price: '€2,490-29,990+', driverRequired: 'RTSA-Suite PRO', supportedDecoders: ['fm', 'am', 'ssb', 'adsb', 'ais', 'wifi', 'bluetooth', 'lora', 'rtl433'], features: ['Professional RF analysis', '1Hz–6GHz+', 'Up to 245MHz RTBW', '16-bit ADC', 'TSCM certified', 'EMC pre-compliance', 'Near-field probes', 'IQ streaming', 'Direction finding', 'HTTP API'] },
 ];

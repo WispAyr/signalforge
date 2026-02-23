@@ -243,6 +243,9 @@ Pieter-Tjerk de Boer's network of publicly accessible software-defined radio rec
 ### [INTERCEPT](https://github.com/smittix/intercept) by smittix
 A Python-based SIGINT platform that inspired Phase 7's feature absorption — rtl_433 IoT decoding, POCSAG/FLEX pager decoding, sub-GHz analysis, SSTV decoding, WiFi/Bluetooth scanning, TSCM counter-surveillance, Meshtastic integration, number stations database, and field/offline mode. INTERCEPT demonstrated the breadth of capabilities a modern SIGINT platform should cover.
 
+### [Aaronia AG](https://www.aaronia.com)
+Industry-leading spectrum analyzers and EMC test equipment. The Spectran V6 series provides professional-grade RF analysis with up to 245MHz real-time bandwidth. SignalForge integrates with Aaronia's RTSA-Suite PRO HTTP API for remote spectrum analysis, TSCM counter-surveillance sweeps, and EMC pre-compliance testing.
+
 ### Key Libraries
 - **[satellite.js](https://github.com/shashwatak/satellite-js)** — SGP4/SDP4 satellite propagation in JavaScript
 - **[React](https://react.dev)** — UI framework

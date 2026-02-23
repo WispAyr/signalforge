@@ -38,7 +38,7 @@ const API_BASE = process.env.SIGNALFORGE_URL || 'http://localhost:3401';
 const WS_URL = API_BASE.replace(/^http/, 'ws') + '/ws';
 
 const server = new Server(
-  { name: 'signalforge', version: '0.7.0' },
+  { name: 'signalforge', version: '0.10.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -394,6 +394,35 @@ const TOOLS: Record<string, ToolDef> = {
     description: 'Get overall SignalForge system health (all components, memory, uptime)',
     inputSchema: { type: 'object', properties: {} },
   },
+
+  // Aaronia Spectran
+  aaronia_connect: {
+    description: 'Connect to an Aaronia Spectran V6 spectrum analyzer via RTSA-Suite PRO HTTP API',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        host: { type: 'string', description: 'Aaronia RTSA-Suite PRO host (default: 127.0.0.1)' },
+        port: { type: 'number', description: 'HTTP API port (default: 54664)' },
+      },
+    },
+  },
+  aaronia_sweep: {
+    description: 'Run a spectrum sweep on Aaronia Spectran V6. Supports TSCM profiles: quick-room, thorough-sweep, gsm-focus, wifi-camera, emc-pre-compliance, near-field-probe',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        start_frequency: { type: 'number', description: 'Start frequency in Hz' },
+        stop_frequency: { type: 'number', description: 'Stop frequency in Hz' },
+        rbw: { type: 'number', description: 'Resolution bandwidth in Hz' },
+        detector: { type: 'string', enum: ['peak', 'rms', 'average', 'sample'], description: 'Detector type' },
+        profile: { type: 'string', description: 'TSCM profile name (overrides other params)' },
+      },
+    },
+  },
+  aaronia_status: {
+    description: 'Get Aaronia Spectran V6 connection status, current sweep info, and device details',
+    inputSchema: { type: 'object', properties: {} },
+  },
 };
 
 // ── Request Handlers ──────────────────────────────────────────────
@@ -560,6 +589,22 @@ async function handleTool(name: string, args: any) {
     // System
     case 'system_health':
       return api('get', '/api/health');
+
+    // Aaronia Spectran
+    case 'aaronia_connect':
+      return api('post', '/api/aaronia/connect', { host: args.host, port: args.port });
+    case 'aaronia_sweep':
+      if (args.profile) {
+        return api('post', `/api/aaronia/tscm/${args.profile}`);
+      }
+      return api('post', '/api/aaronia/sweep', {
+        startFrequency: args.start_frequency,
+        stopFrequency: args.stop_frequency,
+        rbw: args.rbw,
+        detector: args.detector,
+      });
+    case 'aaronia_status':
+      return api('get', '/api/aaronia/status');
 
     default:
       return { error: 'unknown_tool', tool: name };

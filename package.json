@@ -1,6 +1,6 @@
 {
   "name": "signalforge",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "description": "Universal radio platform — browser-based, GPU-accelerated, flow-based signal processing",
   "workspaces": [

@@ -55,6 +55,7 @@ const NODE_PORTS: Record<string, { inputs: string[]; outputs: string[] }> = {
   websdr_source: { inputs: [], outputs: ['iq', 'audio'] },
   sdr_source_2: { inputs: [], outputs: ['iq'] },
   lrpt_decoder: { inputs: ['iq'], outputs: ['packets'] },
+  aaronia_source: { inputs: [], outputs: ['iq', 'fft'] },
 };
 
 const NODE_PARAMS: Record<string, Array<{ id: string; label: string; type: 'number' | 'select' | 'text'; default: unknown; options?: string[] }>> = {
@@ -81,6 +82,14 @@ const NODE_PARAMS: Record<string, Array<{ id: string; label: string; type: 'numb
   recorder: [
     { id: 'format', label: 'Format', type: 'select', default: 'wav', options: ['wav', 'iq', 'raw'] },
     { id: 'prefix', label: 'Filename Prefix', type: 'text', default: 'recording' },
+  ],
+  aaronia_source: [
+    { id: 'host', label: 'RTSA-Suite Host', type: 'text', default: '127.0.0.1' },
+    { id: 'port', label: 'Port', type: 'number', default: 54664 },
+    { id: 'startFreq', label: 'Start Freq (Hz)', type: 'number', default: 30e6 },
+    { id: 'stopFreq', label: 'Stop Freq (Hz)', type: 'number', default: 6e9 },
+    { id: 'rbw', label: 'RBW (Hz)', type: 'number', default: 10e3 },
+    { id: 'span', label: 'Span (Hz)', type: 'number', default: 100e6 },
   ],
   audio_out: [
     { id: 'volume', label: 'Volume', type: 'number', default: 80 },
