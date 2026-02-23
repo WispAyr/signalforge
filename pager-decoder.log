@@ -61,3 +61,4 @@ Output at 22050 Hz.
 [2026-02-23 20:31:08] Shutting down...
 [2026-02-23 20:31:11] Starting pager decoder: 153.350M gain=49.6
 [2026-02-23 20:31:11] Pipeline running
+[2026-02-23 20:34:38] #1 POCSAG2400 Addr:981618 Func:0 ""
