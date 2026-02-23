@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import type { Aircraft, Vessel, APRSStation, TLE, SatellitePosition } from '@signalforge/shared';
+import { useLocationStore } from '../stores/location';
 
 interface SatWithPos extends TLE {
   position: SatellitePosition;
@@ -10,7 +11,8 @@ type MapLayer = 'satellites' | 'aircraft' | 'vessels' | 'aprs';
 export const MapView: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
-  const [observer] = useState({ lat: 55.4583, lon: -4.6298 });
+  const { observer: obsStore } = useLocationStore();
+  const observer = { lat: obsStore.latitude, lon: obsStore.longitude };
   const [layers, setLayers] = useState<Set<MapLayer>>(new Set(['satellites', 'aircraft', 'vessels', 'aprs']));
   const [satellites, setSatellites] = useState<SatWithPos[]>([]);
   const [aircraft, setAircraft] = useState<Aircraft[]>([]);

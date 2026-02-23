@@ -8,6 +8,7 @@ import { ADSBDecoder } from './decoders/adsb.js';
 import { ACARSDecoder } from './decoders/acars.js';
 import { AISDecoder } from './decoders/ais.js';
 import { APRSDecoder } from './decoders/aprs.js';
+import { LocationService } from './location/service.js';
 import type { DashboardStats, ActivityFeedItem } from '@signalforge/shared';
 
 const PORT = parseInt(process.env.PORT || '3401');
@@ -25,6 +26,14 @@ const adsbDecoder = new ADSBDecoder();
 const acarsDecoder = new ACARSDecoder();
 const aisDecoder = new AISDecoder();
 const aprsDecoder = new APRSDecoder();
+
+const locationService = new LocationService();
+locationService.start();
+
+// Broadcast location changes to all WS clients
+locationService.on('location', (loc) => {
+  broadcast({ type: 'location', observer: loc });
+});
 
 // Start decoders
 adsbDecoder.start();
@@ -89,6 +98,33 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// --- Location / Observer ---
+app.get('/api/settings/location', (_req, res) => {
+  res.json(locationService.getSettings());
+});
+
+app.post('/api/settings/location', (req, res) => {
+  try {
+    locationService.updateSettings(req.body);
+    res.json(locationService.getSettings());
+  } catch (err) {
+    res.status(400).json({ error: String(err) });
+  }
+});
+
+app.get('/api/observer', (_req, res) => {
+  res.json(locationService.getObserver());
+});
+
+app.post('/api/observer', (req, res) => {
+  const { latitude, longitude, altitude, name, source } = req.body;
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    return res.status(400).json({ error: 'latitude and longitude required as numbers' });
+  }
+  locationService.setLocation({ latitude, longitude, altitude: altitude || 0, name, source: source || 'manual' });
+  res.json(locationService.getObserver());
+});
+
 app.get('/api/devices', (_req, res) => {
   res.json(sdrBridge.getDevices());
 });
@@ -129,9 +165,10 @@ app.get('/api/satellites/positions', async (req, res) => {
 
 app.get('/api/satellites/:id/passes', async (req, res) => {
   const catalogNumber = parseInt(req.params.id);
-  const lat = parseFloat(req.query.lat as string) || 55.4583;
-  const lon = parseFloat(req.query.lon as string) || -4.6298;
-  const alt = parseFloat(req.query.alt as string) || 20;
+  const obs = locationService.getObserver();
+  const lat = parseFloat(req.query.lat as string) || obs.latitude;
+  const lon = parseFloat(req.query.lon as string) || obs.longitude;
+  const alt = parseFloat(req.query.alt as string) || obs.altitude;
   const hours = parseFloat(req.query.hours as string) || 24;
 
   try {
@@ -143,9 +180,10 @@ app.get('/api/satellites/:id/passes', async (req, res) => {
 });
 
 app.get('/api/satellites/passes', async (req, res) => {
-  const lat = parseFloat(req.query.lat as string) || 55.4583;
-  const lon = parseFloat(req.query.lon as string) || -4.6298;
-  const alt = parseFloat(req.query.alt as string) || 20;
+  const obs = locationService.getObserver();
+  const lat = parseFloat(req.query.lat as string) || obs.latitude;
+  const lon = parseFloat(req.query.lon as string) || obs.longitude;
+  const alt = parseFloat(req.query.alt as string) || obs.altitude;
   const hours = parseFloat(req.query.hours as string) || 12;
 
   try {
@@ -280,6 +318,7 @@ wss.on('connection', (ws: WebSocket) => {
   console.log('⚡ Client connected');
 
   // Send initial state
+  ws.send(JSON.stringify({ type: 'location', observer: locationService.getObserver() }));
   ws.send(JSON.stringify({ type: 'adsb', aircraft: adsbDecoder.getAircraft() }));
   ws.send(JSON.stringify({ type: 'ais', vessels: aisDecoder.getVessels() }));
   ws.send(JSON.stringify({ type: 'aprs', stations: aprsDecoder.getStations() }));

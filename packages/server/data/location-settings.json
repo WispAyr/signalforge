@@ -1,0 +1,20 @@
+{
+  "observer": {
+    "latitude": 55.4583,
+    "longitude": -4.6298,
+    "altitude": 20,
+    "name": "Ayr, Scotland",
+    "source": "manual",
+    "lastUpdated": "2026-02-23T01:38:46.189Z"
+  },
+  "source": "manual",
+  "gps": {
+    "enabled": false,
+    "type": "none"
+  },
+  "starlink": {
+    "enabled": false,
+    "host": "192.168.100.1",
+    "pollIntervalMs": 30000
+  }
+}

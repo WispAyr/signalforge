@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { DashboardStats, ActivityFeedItem, FlowPreset } from '@signalforge/shared';
+import { useLocationStore } from '../stores/location';
 
 type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'split';
 
@@ -8,6 +9,7 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
+  const { observer } = useLocationStore();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [activity, setActivity] = useState<ActivityFeedItem[]>([]);
   const [presets, setPresets] = useState<FlowPreset[]>([]);
@@ -46,7 +48,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         <div>
           <h2 className="font-display text-2xl tracking-wider text-forge-cyan">OPERATIONS CENTER</h2>
           <p className="text-xs font-mono text-forge-text-dim mt-1">
-            Ayr, Scotland — 55.4583°N, 4.6298°W — {new Date().toISOString().slice(0, 19).replace('T', ' ')} UTC
+            {observer.name || 'Unknown'} — {observer.latitude.toFixed(4)}°{observer.latitude >= 0 ? 'N' : 'S'}, {Math.abs(observer.longitude).toFixed(4)}°{observer.longitude >= 0 ? 'E' : 'W'} — {new Date().toISOString().slice(0, 19).replace('T', ' ')} UTC
           </p>
         </div>
         <div className="text-right">
