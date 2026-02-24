@@ -17,6 +17,8 @@ export class LocationService extends EventEmitter {
   private gpsdClient: net.Socket | null = null;
   private starlinkTimer: ReturnType<typeof setInterval> | null = null;
   private serialParser: NMEAParser | null = null;
+  private starlinkFailures = 0;
+  private starlinkBackoff = 30000; // start at 30s
 
   constructor() {
     super();
@@ -198,9 +200,9 @@ export class LocationService extends EventEmitter {
 
   private async pollStarlink() {
     const host = this.settings.starlink.host;
+    let success = false;
     try {
-      // Starlink exposes location via the debug/status API
-      // Try the HTTP status endpoint first (newer firmware)
+      // Try HTTP endpoint first
       const response = await fetchWithTimeout(`http://${host}/api/location`, 5000);
       if (response) {
         const data = JSON.parse(response);
@@ -212,36 +214,44 @@ export class LocationService extends EventEmitter {
             source: 'starlink',
             name: 'Starlink Dish',
           });
-          return;
+          success = true;
         }
       }
     } catch { /* HTTP endpoint not available */ }
 
-    try {
-      // Try the gRPC-web status page (older firmware pattern)
-      // The dish status page at 192.168.100.1 sometimes exposes location in device info
-      const response = await fetchWithTimeout(`http://${host}/api/v1/device/status`, 5000);
-      if (response) {
-        const data = JSON.parse(response);
-        // Look for GPS data in various possible locations
-        const gps = data?.dishGetStatus?.gpsStats || data?.gpsStats || data?.deviceInfo?.gps;
-        if (gps?.latitude && gps?.longitude) {
-          this.setLocation({
-            latitude: gps.latitude,
-            longitude: gps.longitude,
-            altitude: gps.altitude || 0,
-            source: 'starlink',
-            name: 'Starlink Dish',
-          });
-          return;
+    if (!success) {
+      try {
+        // Try gRPC-web endpoint
+        const response = await fetchWithTimeout(`http://${host}/api/v1/device/status`, 5000);
+        if (response) {
+          const data = JSON.parse(response);
+          const gps = data?.dishGetStatus?.gpsStats || data?.gpsStats || data?.deviceInfo?.gps;
+          if (gps?.latitude && gps?.longitude) {
+            this.setLocation({
+              latitude: gps.latitude,
+              longitude: gps.longitude,
+              altitude: gps.altitude || 0,
+              source: 'starlink',
+              name: 'Starlink Dish',
+            });
+            success = true;
+          }
         }
-      }
-    } catch { /* gRPC endpoint not available */ }
+      } catch { /* gRPC endpoint not available */ }
+    }
 
-    // Note: Full Starlink gRPC requires grpc-js + protobuf definitions from spacex.api.device
-    // For now, the HTTP endpoints above cover common setups
-    // To add full gRPC: npm install @grpc/grpc-js google-protobuf
-    // Then import the SpaceX protobufs from https://github.com/sparky8512/starlink-grpc-tools
+    // Handle failures gracefully
+    if (!success) {
+      this.starlinkFailures++;
+      console.log(`🛰️ Starlink poll failed (${this.starlinkFailures}/5 consecutive)`);
+      if (this.starlinkFailures >= 5) {
+        console.log('🛰️ Starlink unreachable — stopping polling. Re-enable when dish is present.');
+        this.stopStarlink();
+      }
+    } else {
+      // Reset on success
+      this.starlinkFailures = 0;
+    }
   }
 
   stopStarlink() {

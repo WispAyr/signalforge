@@ -69,6 +69,20 @@ import { createRulesRouter } from './rules/api.js';
 import { createDataFlowRouter } from './rules/dataflow-api.js';
 import type { DashboardStats, ActivityFeedItem, IntegrationType } from '@signalforge/shared';
 
+// ============================================================================
+// Global Error Handling — Prevents Silent Crashes
+// ============================================================================
+process.on('uncaughtException', (err, origin) => {
+  console.error('🚨 Uncaught Exception:', err.message, 'origin:', origin);
+  console.error(err.stack || 'no stack trace');
+  // DO NOT exit — keep process alive but log
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 Unhandled Rejection at:', promise, 'reason:', reason);
+  // DO NOT exit — just log
+});
+
 const PORT = parseInt(process.env.PORT || '3401');
 const app = express();
 app.use(cors());
@@ -490,18 +504,30 @@ aisDecoder.on('message', (msg) => rulesEngine.evaluate('ais', String(msg.mmsi ||
 aprsDecoder.on('message', (pkt) => rulesEngine.evaluate('aprs', pkt.source || 'unknown', pkt));
 rtl433Service.on('device_update', (d) => rulesEngine.evaluate('rtl433', d.id || d.model || 'unknown', d));
 meshtasticService.on('message', (m) => rulesEngine.evaluate('meshtastic', m.from || 'unknown', m));
+// Safe send — catches EPIPE/ECONNRESET from dead clients
+function safeSend(client: WebSocket, data: string | Buffer | ArrayBuffer, opts?: { binary?: boolean }) {
+  try {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(data, opts || {}, (err) => {
+        if (err) {
+          // Client gone — terminate silently
+          try { client.terminate(); } catch { /* already dead */ }
+        }
+      });
+    }
+  } catch {
+    try { client.terminate(); } catch { /* already dead */ }
+  }
+}
+
 function broadcast(data: unknown) {
   const msg = JSON.stringify(data);
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) client.send(msg);
-  });
+  wss.clients.forEach((client) => safeSend(client, msg));
 }
 
 // Binary broadcast for IQ data
 function broadcastBinary(data: Buffer | ArrayBuffer) {
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) client.send(data, { binary: true });
-  });
+  wss.clients.forEach((client) => safeSend(client, data as Buffer, { binary: true }));
 }
 
 // ── Satellite pass notification scheduler ──────────────────────────────
@@ -1677,8 +1703,7 @@ app.post('/api/plugins/:id/disable', (req, res) => {
 });
 
 // Dynamic filesystem plugins from data/plugins/
-import { readdirSync, readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { readdirSync } from 'fs';
 const PLUGINS_DIR = join(process.cwd(), 'data', 'plugins');
 const fsPlugins = new Map<string, { manifest: any; enabled: boolean }>();
 function scanFilePlugins() {
@@ -2741,15 +2766,15 @@ wss.on('connection', (ws: WebSocket, req) => {
 
   console.log('⚡ Client connected');
 
-  // Send initial state
-  ws.send(JSON.stringify({ type: 'location', observer: locationService.getObserver() }));
-  ws.send(JSON.stringify({ type: 'adsb', aircraft: adsbDecoder.getAircraft() }));
-  ws.send(JSON.stringify({ type: 'ais', vessels: aisDecoder.getVessels() }));
-  ws.send(JSON.stringify({ type: 'aprs', stations: aprsDecoder.getStations() }));
-  ws.send(JSON.stringify({ type: 'users_update', users: sessionManager.getOnlineUsers() }));
-  ws.send(JSON.stringify({ type: 'edge_nodes', nodes: edgeNodeManager.getNodes() }));
-  ws.send(JSON.stringify({ type: 'plugins_update', plugins: pluginLoader.getPluginStatus() }));
-  ws.send(JSON.stringify({ type: 'scanner_state', state: frequencyScanner.getState() }));
+  // Send initial state (safe — client may disconnect mid-burst)
+  safeSend(ws, JSON.stringify({ type: 'location', observer: locationService.getObserver() }));
+  safeSend(ws, JSON.stringify({ type: 'adsb', aircraft: adsbDecoder.getAircraft() }));
+  safeSend(ws, JSON.stringify({ type: 'ais', vessels: aisDecoder.getVessels() }));
+  safeSend(ws, JSON.stringify({ type: 'aprs', stations: aprsDecoder.getStations() }));
+  safeSend(ws, JSON.stringify({ type: 'users_update', users: sessionManager.getOnlineUsers() }));
+  safeSend(ws, JSON.stringify({ type: 'edge_nodes', nodes: edgeNodeManager.getNodes() }));
+  safeSend(ws, JSON.stringify({ type: 'plugins_update', plugins: pluginLoader.getPluginStatus() }));
+  safeSend(ws, JSON.stringify({ type: 'scanner_state', state: frequencyScanner.getState() }));
 
   // Send rotator state if connected
   if (rotatorClient?.isConnected) {
