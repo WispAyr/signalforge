@@ -238,8 +238,8 @@ export const PagerView: React.FC = () => {
               const dupCount = duplicates.length;
               const isExpanded = expandedGroups.has(gid);
               const isFlashing = flashIds.has(leader.id);
-              const alertMatches = hasAlertKeyword(leader.content_clean || leader.content);
-              const content = leader.content_clean || leader.content;
+              const alertMatches = hasAlertKeyword(leader.content_clean || leader.content || '');
+              const content = leader.content_clean || leader.content || '';
               const cat = leader.capcode_category;
               const label = leader.capcode_label;
 
