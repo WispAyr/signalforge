@@ -133,7 +133,7 @@ export class PersistenceService {
       if (pkt.longitude != null) existing.lon = pkt.longitude;
       if (pkt.symbol) existing.symbol = pkt.symbol;
       if (pkt.comment) existing.comment = pkt.comment;
-      if (pkt.path) existing.path = pkt.path;
+      if (pkt.path) existing.path = Array.isArray(pkt.path) ? pkt.path.join(',') : pkt.path;
     } else {
       this.aprsBuffer.set(key, {
         callsign: key,
@@ -141,7 +141,7 @@ export class PersistenceService {
         lon: pkt.longitude ?? null,
         symbol: pkt.symbol || null,
         comment: pkt.comment || null,
-        path: pkt.path || null,
+        path: pkt.path ? (Array.isArray(pkt.path) ? pkt.path.join(',') : pkt.path) : null,
         count: 1,
       });
     }
