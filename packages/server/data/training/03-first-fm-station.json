@@ -1,0 +1,41 @@
+{
+  "id": "first-fm-station",
+  "title": "Your First FM Station",
+  "category": "basics",
+  "difficulty": "beginner",
+  "estimatedMinutes": 10,
+  "icon": "📻",
+  "content": "# Your First FM Station\n\nLet's receive an FM broadcast station — the classic SDR \"hello world.\"\n\n## What You Need\n\n- RTL-SDR dongle with antenna\n- SignalForge running\n\n## The Flow\n\nBuild this signal chain in the Flow Editor:\n\n**SDR Source** → **FM Demod** → **Audio Out**\n\n## Settings\n\n- **Frequency:** A local FM station (e.g., 97.6 MHz for BBC Radio 1)\n- **Sample rate:** 2.048 MHz\n- **FM bandwidth:** 200 kHz (wide FM)\n- **Audio output:** Your speakers\n\n## Why FM?\n\nFM broadcast is the strongest, widest, and easiest signal to receive. It proves your entire chain works — antenna, SDR, software, audio.",
+  "steps": [
+    {
+      "title": "Connect Your SDR",
+      "content": "Plug in the RTL-SDR and extend the antenna to about 75cm. Place it near a window for best reception."
+    },
+    {
+      "title": "Build the Flowgraph",
+      "content": "Open the Flow Editor. Drag an SDR Source, FM Demod, and Audio Out block. Connect them in series. Set the SDR Source to your local FM frequency."
+    },
+    {
+      "title": "Tune and Listen",
+      "content": "Click Start. You should hear the FM station within seconds. If not, try adjusting the gain or moving the antenna."
+    },
+    {
+      "title": "Experiment",
+      "content": "Try different stations. Watch the waterfall — each station appears as a wide coloured band. Notice how stereo stations have a wider bandwidth than mono."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What bandwidth does a typical FM broadcast station use?",
+      "options": ["12.5 kHz", "25 kHz", "100 kHz", "200 kHz"],
+      "correctIndex": 3,
+      "explanation": "FM broadcast uses ~200 kHz bandwidth, which is why it sounds so much better than narrowband communications."
+    },
+    {
+      "question": "What sample rate should you use for FM reception?",
+      "options": ["256 kHz", "1 MHz", "2.048 MHz", "10 MHz"],
+      "correctIndex": 2,
+      "explanation": "2.048 MHz (2 MSPS) is the standard sample rate for RTL-SDR FM reception — wide enough to capture the full signal."
+    }
+  ]
+}

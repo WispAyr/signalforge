@@ -1,0 +1,37 @@
+{
+  "id": "understanding-spectrum",
+  "title": "Understanding the Spectrum",
+  "category": "basics",
+  "difficulty": "beginner",
+  "estimatedMinutes": 15,
+  "icon": "📊",
+  "content": "# Understanding the Spectrum\n\nThe **waterfall display** and **FFT spectrum** are your primary tools for visualising radio signals. Learning to read them is essential.\n\n## The FFT Spectrum\n\nThe Fast Fourier Transform (FFT) converts time-domain samples into a frequency-domain view. It shows signal strength (dB) across a range of frequencies at one instant.\n\n## The Waterfall\n\nThe waterfall is a scrolling spectrogram:\n- **X-axis:** Frequency\n- **Y-axis:** Time (newest at top)\n- **Colour:** Signal strength (blue=quiet, yellow/red=strong)\n\n## Reading Signals\n\n| Pattern | Signal Type |\n|---------|------------|\n| Wide, constant band | FM broadcast (~200 kHz) |\n| Thin constant line | Carrier/beacon |\n| Intermittent blobs | Voice (push-to-talk) |\n| Uniform rectangle | Digital data |\n| Brief wideband pulse | Radar/burst |\n\n## Key Concepts\n\n- **Noise floor:** The background level where no signals exist\n- **SNR:** Signal-to-Noise Ratio — how much a signal rises above the noise\n- **Bandwidth:** How wide a signal is in Hz\n- **Centre frequency:** The middle of your tuned range",
+  "steps": [
+    {
+      "title": "Opening the Waterfall",
+      "content": "In SignalForge, the waterfall is always visible on the main dashboard. You can also press '1' for a full-screen waterfall view."
+    },
+    {
+      "title": "Identifying FM Stations",
+      "content": "Tune to the FM broadcast band (88-108 MHz). You'll see wide bands of colour — each one is a radio station. Stronger stations appear brighter."
+    },
+    {
+      "title": "Finding Hidden Signals",
+      "content": "Zoom into quieter parts of the spectrum. Many signals are narrow and intermittent — walkie-talkies, pagers, IoT devices. The waterfall's time axis helps you spot brief transmissions."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What does the colour on a waterfall display represent?",
+      "options": ["Frequency", "Time", "Signal strength", "Modulation type"],
+      "correctIndex": 2,
+      "explanation": "Brighter/warmer colours indicate stronger signals. The exact colour scale varies but typically goes from blue (weak) to red/white (strong)."
+    },
+    {
+      "question": "What is the noise floor?",
+      "options": ["The maximum signal level", "The background level where no signals exist", "The frequency of background noise", "A type of filter"],
+      "correctIndex": 1,
+      "explanation": "The noise floor is the baseline level of random noise. Signals must rise above this floor to be detectable."
+    }
+  ]
+}

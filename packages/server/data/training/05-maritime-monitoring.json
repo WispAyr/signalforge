@@ -1,0 +1,37 @@
+{
+  "id": "maritime-monitoring",
+  "title": "Maritime Monitoring (AIS)",
+  "category": "marine",
+  "difficulty": "beginner",
+  "estimatedMinutes": 15,
+  "icon": "🚢",
+  "content": "# Maritime Monitoring with AIS\n\nAIS (Automatic Identification System) is the maritime equivalent of ADS-B. Every large vessel broadcasts its identity, position, course, and speed.\n\n## Frequencies\n\n- **Channel 87B:** 161.975 MHz\n- **Channel 88B:** 162.025 MHz\n\nBoth channels are used simultaneously with TDMA (time-division multiple access).\n\n## What Ships Broadcast\n\n### Every 2-10 seconds (dynamic data):\n- Position (lat/lon)\n- Speed over ground\n- Course over ground\n- Rate of turn\n- Navigation status\n\n### Every 6 minutes (static data):\n- MMSI (9-digit unique ID)\n- Vessel name and callsign\n- Ship type and dimensions\n- Destination and ETA\n\n## AIS Classes\n\n| Class | Who | Update Rate |\n|-------|-----|------------|\n| Class A | Large vessels (>300 GT) | 2-10 seconds |\n| Class B | Pleasure craft | 30s - 3 min |\n| AtoN | Buoys, lighthouses | 3 minutes |\n\n## Reception Tips\n\nCoastal locations are ideal. Even 20-30 miles inland with a good antenna on a mast, you'll receive plenty of maritime traffic. VHF signals travel well over water.",
+  "steps": [
+    {
+      "title": "Tune to AIS",
+      "content": "Set your SDR to 162.000 MHz centre frequency with 50 kHz bandwidth. The AIS decoder monitors both channels simultaneously."
+    },
+    {
+      "title": "Watch the Maritime Map",
+      "content": "Vessels appear on the map with their real names, types, and routes. Click a vessel to see full details including destination and cargo type."
+    },
+    {
+      "title": "Understanding MMSI",
+      "content": "Every vessel has a unique 9-digit MMSI. The first digits indicate the country: 2xx = UK, 3xx = US. You can look up vessel details using the MMSI on MarineTraffic."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What are the two AIS frequencies?",
+      "options": ["156.800 and 156.825 MHz", "161.975 and 162.025 MHz", "137.100 and 137.912 MHz", "144.800 and 145.000 MHz"],
+      "correctIndex": 1,
+      "explanation": "AIS uses 161.975 MHz (Ch 87B) and 162.025 MHz (Ch 88B)."
+    },
+    {
+      "question": "How often does a Class A vessel update its position?",
+      "options": ["Every 30 seconds", "Every 2-10 seconds", "Every 3 minutes", "Every 6 minutes"],
+      "correctIndex": 1,
+      "explanation": "Class A transponders update every 2-10 seconds depending on speed and turn rate."
+    }
+  ]
+}

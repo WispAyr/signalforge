@@ -69,6 +69,10 @@ import { WebSDRService } from './sdr/websdr.js';
 import { TimeMachineService } from './timemachine/service.js';
 import { SettingsService } from './services/settings.js';
 import { PersistenceService } from './persistence/service.js';
+import { db } from './services/database.js';
+import { FilesystemPluginLoader } from './plugins/fs-loader.js';
+import { CommunityDBService } from './community/db-service.js';
+import { TrainingService } from './training/service.js';
 // Rules engine
 import { RulesEngine } from './rules/engine.js';
 import { createRulesRouter } from './rules/api.js';
@@ -218,6 +222,13 @@ const webSDRService = new WebSDRService();
 const timeMachineService = new TimeMachineService();
 const settingsService = new SettingsService();
 const persistenceService = new PersistenceService();
+
+// Community DB + Training services (sqlite-backed)
+const communityDBService = new CommunityDBService();
+const trainingService = new TrainingService();
+
+// Filesystem plugin loader (initialized lazily after all services are ready)
+let fsPluginLoader: FilesystemPluginLoader;
 
 // Rules engine — evaluates all decoder events against user-defined rules
 const rulesEngine = new RulesEngine(
@@ -2779,6 +2790,77 @@ app.post('/api/community/reports', (req, res) => {
 app.get('/api/community/reports', (_req, res) => res.json(communityReports));
 
 // ============================================================================
+// REST API — Community Hub (SQLite-backed)
+// ============================================================================
+app.get('/api/community/db/flowgraphs', (req, res) => {
+  res.json(communityDBService.getFlowgraphs(req.query.category as string, req.query.search as string));
+});
+app.get('/api/community/db/flowgraphs/:id', (req, res) => {
+  const fg = communityDBService.getFlowgraph(req.params.id);
+  fg ? res.json(fg) : res.status(404).json({ error: 'Not found' });
+});
+app.post('/api/community/db/flowgraphs', (req, res) => {
+  res.json(communityDBService.shareFlowgraph(req.body));
+});
+app.post('/api/community/db/flowgraphs/:id/import', (req, res) => {
+  const result = communityDBService.importFlowgraph(req.params.id);
+  result ? res.json(result) : res.status(404).json({ error: 'Not found' });
+});
+app.post('/api/community/db/flowgraphs/:id/rate', (req, res) => {
+  res.json({ ok: communityDBService.rateFlowgraph(req.params.id, req.body.rating) });
+});
+app.post('/api/community/observations', (req, res) => {
+  res.json(communityDBService.postObservation(req.body));
+});
+app.get('/api/community/observations', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 50;
+  res.json(communityDBService.getObservations(limit));
+});
+app.post('/api/community/observations/:id/like', (req, res) => {
+  res.json({ ok: communityDBService.likeObservation(req.params.id, req.body.userId || 'anonymous') });
+});
+app.post('/api/community/observations/:id/bookmark', (req, res) => {
+  res.json({ ok: communityDBService.bookmarkObservation(req.params.id, req.body.userId || 'anonymous') });
+});
+
+// ============================================================================
+// REST API — Training Academy (file-based tutorials)
+// ============================================================================
+app.get('/api/training/tutorials', (req, res) => {
+  res.json(trainingService.getTutorials(req.query.category as string, req.query.difficulty as string));
+});
+app.get('/api/training/tutorials/:id', (req, res) => {
+  const tut = trainingService.getTutorial(req.params.id);
+  tut ? res.json(tut) : res.status(404).json({ error: 'Tutorial not found' });
+});
+app.post('/api/training/progress', (req, res) => {
+  const { userId, tutorialId, completed, quizScore } = req.body;
+  trainingService.saveProgress(userId || 'default', tutorialId, completed, quizScore);
+  res.json({ ok: true });
+});
+app.get('/api/training/progress', (req, res) => {
+  res.json(trainingService.getProgress(req.query.userId as string || 'default'));
+});
+
+// ============================================================================
+// REST API — Filesystem Plugins (enhanced)
+// ============================================================================
+app.get('/api/plugins/fs', (_req, res) => res.json(fsPluginLoader.getAll()));
+app.get('/api/plugins/fs/:id', (req, res) => {
+  const p = fsPluginLoader.getPlugin(req.params.id);
+  p ? res.json(p) : res.status(404).json({ error: 'Plugin not found' });
+});
+app.put('/api/plugins/fs/:id/config', (req, res) => {
+  res.json({ ok: fsPluginLoader.updateConfig(req.params.id, req.body) });
+});
+app.post('/api/plugins/fs/:id/enable', async (req, res) => {
+  res.json({ ok: await fsPluginLoader.enablePlugin(req.params.id) });
+});
+app.post('/api/plugins/fs/:id/disable', async (req, res) => {
+  res.json({ ok: await fsPluginLoader.disablePlugin(req.params.id) });
+});
+
+// ============================================================================
 // REST API — Phase 8: Academy / Training
 // ============================================================================
 app.get('/api/academy/tutorials', (req, res) => res.json(academyService.getTutorials(req.query.difficulty as any)));
@@ -3299,6 +3381,22 @@ setTimeout(() => {
     else console.log("📡 SDR Multiplexer: no device or auto-start failed");
   }).catch(err => console.error("📡 SDR Multiplexer auto-start error:", err));
 }, 3000); // Delay to let server bind first
+
+// Load filesystem plugins
+const serviceMap = new Map<string, any>([
+  ['adsb', adsbDecoder], ['ais', aisDecoder], ['aprs', aprsDecoder],
+  ['sdr', sdrMultiplexer], ['mqtt', mqttClient], ['location', locationService],
+  ['pager', pagerService], ['satellite', satelliteService],
+]);
+fsPluginLoader = new FilesystemPluginLoader(
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'plugins'),
+  db,
+  serviceMap,
+  (data: any) => { try { broadcast(data); } catch {} },
+);
+fsPluginLoader.scanAndLoad().then(() => {
+  fsPluginLoader.registerRoutes(app);
+}).catch(err => console.error('Plugin loading error:', err));
 
 // Serve production client build (bypasses Vite dev server entirely)
 const __sfDir = dirname(fileURLToPath(import.meta.url));

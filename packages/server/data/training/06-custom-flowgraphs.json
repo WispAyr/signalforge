@@ -1,0 +1,41 @@
+{
+  "id": "custom-flowgraphs",
+  "title": "Building Custom Flowgraphs",
+  "category": "advanced",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 20,
+  "icon": "🔧",
+  "content": "# Building Custom Flowgraphs\n\nSignalForge's Flow Editor lets you build custom signal processing chains by connecting blocks together — like a visual programming language for radio.\n\n## Core Block Types\n\n### Sources\n- **SDR Source** — connects to your RTL-SDR or SoapySDR device\n- **File Source** — replay recorded IQ files\n- **WebSDR Source** — stream from remote WebSDR receivers\n\n### Processing\n- **FFT** — frequency analysis (powers the waterfall)\n- **Downconverter** — extract a narrowband signal from wideband IQ\n- **Filter** — low-pass, band-pass, high-pass filtering\n\n### Demodulators\n- **FM Demod** — wide or narrow FM demodulation\n- **AM Demod** — amplitude modulation\n- **SSB Demod** — upper/lower sideband\n\n### Decoders\n- **ADS-B Decoder** — aircraft tracking from 1090 MHz\n- **AIS Decoder** — maritime vessel tracking\n- **APRS Decoder** — amateur radio packet data\n- **POCSAG Decoder** — pager messages\n\n### Outputs\n- **Audio Out** — play through speakers\n- **Waterfall** — visual spectrum display\n- **MQTT Sink** — publish to MQTT broker\n- **File Sink** — record to file\n\n## Building a Flow\n\n1. **Drag blocks** from the palette onto the canvas\n2. **Connect ports** by clicking an output and dragging to an input\n3. **Configure parameters** by clicking a block\n4. **Start** the flow with the play button\n\n## Tips\n\n- Start simple (source → demod → output) and add complexity\n- The SDR Multiplexer lets you run multiple receivers from one SDR\n- Save flows to share with the community\n- Background flows run continuously even when you switch views",
+  "steps": [
+    {
+      "title": "The Flow Editor",
+      "content": "Open the Flow Editor from the sidebar. The left panel shows available blocks, the canvas is your workspace, and the right panel shows selected block properties."
+    },
+    {
+      "title": "Build a Simple Chain",
+      "content": "Start with SDR Source → FM Demod → Audio Out. This is the simplest useful flowgraph. Once it works, add an FFT and Waterfall block branching from the SDR Source."
+    },
+    {
+      "title": "Multi-Receiver Setup",
+      "content": "Use the Downconverter block to extract multiple narrowband signals from one wideband SDR. For example: one SDR at 153 MHz centre can simultaneously decode three pager frequencies."
+    },
+    {
+      "title": "Sharing Your Flow",
+      "content": "Save your flowgraph and share it with the Community Hub. Other users can import and adapt your designs."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What block converts wideband IQ to a narrowband signal?",
+      "options": ["FFT", "Downconverter", "FM Demod", "Audio Out"],
+      "correctIndex": 1,
+      "explanation": "The Downconverter extracts a narrow slice of the wideband IQ data, allowing you to process multiple signals from one SDR simultaneously."
+    },
+    {
+      "question": "What's the recommended approach for building a new flowgraph?",
+      "options": ["Add all blocks first, then connect", "Start simple and add complexity", "Copy an existing preset", "Use only default settings"],
+      "correctIndex": 1,
+      "explanation": "Start with the simplest chain (source → demod → output), verify it works, then add more blocks incrementally."
+    }
+  ]
+}

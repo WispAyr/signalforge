@@ -1,0 +1,43 @@
+{
+  "id": "decoding-aircraft",
+  "title": "Decoding Aircraft (ADS-B)",
+  "category": "aviation",
+  "difficulty": "beginner",
+  "estimatedMinutes": 15,
+  "icon": "✈️",
+  "content": "# Decoding Aircraft with ADS-B\n\nADS-B (Automatic Dependent Surveillance–Broadcast) lets you track every aircraft within hundreds of miles using your SDR.\n\n## How It Works\n\nAircraft broadcast their GPS position, altitude, speed, and callsign on **1090 MHz** once per second. These transmissions are unencrypted and freely receivable.\n\n## The Data\n\nEach ADS-B message contains:\n- **ICAO address** — unique aircraft identifier (e.g., 406A3B)\n- **Callsign** — flight number (e.g., BAW256)\n- **Position** — latitude and longitude\n- **Altitude** — in feet (barometric or GPS)\n- **Velocity** — ground speed and heading\n- **Squawk** — transponder code\n\n## Emergency Squawks\n\n| Code | Meaning |\n|------|--------|\n| 7700 | Emergency (Mayday) |\n| 7600 | Radio failure |\n| 7500 | Hijack |\n\n## Antenna Tips\n\nADS-B works best with a vertical antenna tuned for 1090 MHz. A quarter-wave ground plane has elements of 6.9cm. Mount it as high as possible — even a window mount helps dramatically.",
+  "steps": [
+    {
+      "title": "Set Up the Receiver",
+      "content": "Tune your SDR to 1090 MHz with 2 MHz sample rate. The ADS-B decoder handles the rest — no demodulator needed."
+    },
+    {
+      "title": "Watch the Map",
+      "content": "Switch to Map View. Aircraft appear as icons with callsigns. Click one to see its full data — altitude, speed, heading, and track history."
+    },
+    {
+      "title": "Optimise Your Setup",
+      "content": "The number of aircraft you see depends on antenna quality and placement. A proper ADS-B antenna at rooftop height can see 200+ miles in every direction."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What frequency does ADS-B use?",
+      "options": ["137.1 MHz", "156.8 MHz", "1090 MHz", "2.4 GHz"],
+      "correctIndex": 2,
+      "explanation": "ADS-B operates on 1090 MHz, in the L-band."
+    },
+    {
+      "question": "What does squawk 7700 mean?",
+      "options": ["Normal flight", "Radio failure", "Emergency", "VFR"],
+      "correctIndex": 2,
+      "explanation": "7700 is the international emergency squawk code, indicating a mayday situation."
+    },
+    {
+      "question": "What is the ideal antenna element length for 1090 MHz?",
+      "options": ["2 metres", "75 cm", "6.9 cm", "1.2 cm"],
+      "correctIndex": 2,
+      "explanation": "Quarter wavelength at 1090 MHz ≈ 6.9 cm."
+    }
+  ]
+}

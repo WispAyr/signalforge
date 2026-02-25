@@ -1,0 +1,43 @@
+{
+  "id": "what-is-sdr",
+  "title": "What is SDR?",
+  "category": "basics",
+  "difficulty": "beginner",
+  "estimatedMinutes": 10,
+  "icon": "📻",
+  "content": "# What is Software-Defined Radio?\n\nA **Software-Defined Radio (SDR)** replaces traditional hardware radio components with software running on a computer. Instead of fixed circuits for tuning, filtering, and demodulating, an SDR digitises raw radio waves and processes them entirely in software.\n\n## Why SDR Matters\n\nTraditional radios are locked to specific frequencies and modes. An SDR can receive **anything** — from FM radio to satellite signals to aircraft transponders — all with the same £25 USB dongle.\n\n## The Hardware\n\nThe most common SDR is the **RTL-SDR** (RTL2832U + R820T2 chipset):\n- **Frequency range:** 24 MHz – 1766 MHz\n- **Bandwidth:** Up to 2.4 MHz\n- **Resolution:** 8-bit ADC\n- **Cost:** ~£25\n\n## How It Works\n\n1. Radio waves hit the antenna\n2. The SDR's ADC samples the signal millions of times per second\n3. These digital samples (IQ data) are sent to your computer via USB\n4. Software processes the samples — tuning, filtering, demodulating\n5. You hear audio, see aircraft on a map, or decode satellite images\n\n## What Can You Do?\n\n- Listen to FM radio, air traffic control, marine VHF\n- Track aircraft with ADS-B (1090 MHz)\n- Monitor ships with AIS (162 MHz)\n- Decode weather satellite images (137 MHz)\n- Scan pager messages, IoT sensors, and more",
+  "steps": [
+    {
+      "title": "Understanding the Basics",
+      "content": "Radio waves are electromagnetic radiation. They travel at the speed of light and carry information through modulation — changing a carrier wave's amplitude, frequency, or phase."
+    },
+    {
+      "title": "The Spectrum",
+      "content": "The radio spectrum spans from 3 Hz to 300 GHz. Different frequency bands have different properties — lower frequencies travel further but carry less data; higher frequencies carry more data but need line-of-sight."
+    },
+    {
+      "title": "Your First SDR Setup",
+      "content": "Plug in your RTL-SDR, attach an antenna, and open SignalForge. The waterfall display shows you what's happening across the spectrum in real-time."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What does SDR stand for?",
+      "options": ["Signal Detection Receiver", "Software-Defined Radio", "Spectrum Data Recorder", "Standard Digital Receiver"],
+      "correctIndex": 1,
+      "explanation": "SDR = Software-Defined Radio. The key innovation is moving radio processing from hardware to software."
+    },
+    {
+      "question": "What is the approximate cost of an RTL-SDR?",
+      "options": ["£5", "£25", "£200", "£500"],
+      "correctIndex": 1,
+      "explanation": "RTL-SDR dongles cost around £25, making SDR accessible to everyone."
+    },
+    {
+      "question": "What format does an SDR output?",
+      "options": ["Audio only", "Video frames", "IQ (In-phase/Quadrature) samples", "Text data"],
+      "correctIndex": 2,
+      "explanation": "SDRs output IQ data — pairs of samples that capture both amplitude and phase of the radio signal."
+    }
+  ]
+}
