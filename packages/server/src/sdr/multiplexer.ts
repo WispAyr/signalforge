@@ -124,6 +124,17 @@ export class VirtualReceiver extends EventEmitter {
   private prevI = 0;
   private prevQ = 0;
   private active = false;
+  // DC offset removal (IIR high-pass)
+  private dcAlpha = 0.9999; // very slow adaptation
+  private dcI = 0;
+  private dcQ = 0;
+  // De-emphasis filter (single-pole IIR, 50µs time constant)
+  private deemphState = 0;
+  private deemphAlpha = 0; // computed on configure()
+  // Squelch
+  private squelchLevel = 0; // disabled — multimon-ng handles noise rejection internally
+  private signalPower = 0;
+  private squelchAlpha = 0.01; // power averaging rate
 
   constructor(config: VirtualReceiverConfig) {
     super();
@@ -140,7 +151,7 @@ export class VirtualReceiver extends EventEmitter {
     
     // Design low-pass filter: cutoff at half the channel bandwidth
     const cutoffNorm = (this.config.bandwidth / 2) / parentSampleRate;
-    const numTaps = 65; // odd number for symmetric filter
+    const numTaps = 127; // sharp rolloff for clean channel isolation
     this.firTaps = designLowPassFIR(numTaps, cutoffNorm);
     this.firStateRe = new Float64Array(numTaps);
     this.firStateIm = new Float64Array(numTaps);
@@ -148,6 +159,14 @@ export class VirtualReceiver extends EventEmitter {
     this.phaseAccum = 0;
     this.prevI = 0;
     this.prevQ = 0;
+    this.dcI = 0;
+    this.dcQ = 0;
+    this.deemphState = 0;
+    this.signalPower = 0;
+    // De-emphasis: 50µs time constant for POCSAG pre-emphasis
+    const tau = 50e-6;
+    const dt = 1.0 / this.config.outputRate;
+    this.deemphAlpha = dt / (tau + dt);
     this.active = true;
   }
 
@@ -164,6 +183,12 @@ export class VirtualReceiver extends EventEmitter {
     const phaseInc = (-2 * Math.PI * this.offsetHz) / sampleRate;
     const numTaps = this.firTaps.length;
 
+    // NCO: complex oscillator (avoids cos/sin per sample — ~10x faster)
+    const wRe = Math.cos(phaseInc);
+    const wIm = Math.sin(phaseInc);
+    let ncoRe = Math.cos(this.phaseAccum);
+    let ncoIm = Math.sin(this.phaseAccum);
+
     // Output buffer — after decimation
     const outMax = Math.ceil(numSamples / this.decimationFactor);
     const audioOut = new Float32Array(outMax);
@@ -171,17 +196,28 @@ export class VirtualReceiver extends EventEmitter {
     let decimCounter = 0;
 
     for (let n = 0; n < numSamples; n++) {
-      // 1. Frequency shift (digital downconversion)
-      const cosV = Math.cos(this.phaseAccum);
-      const sinV = Math.sin(this.phaseAccum);
-      const iIn = samples[n * 2];
-      const qIn = samples[n * 2 + 1];
+      // 0. DC offset removal (IIR high-pass) — removes RTL-SDR DC spike
+      const rawI = samples[n * 2];
+      const rawQ = samples[n * 2 + 1];
+      this.dcI = this.dcAlpha * this.dcI + (1 - this.dcAlpha) * rawI;
+      this.dcQ = this.dcAlpha * this.dcQ + (1 - this.dcAlpha) * rawQ;
+      const iIn = rawI - this.dcI;
+      const qIn = rawQ - this.dcQ;
+
+      // 1. Frequency shift via NCO (complex multiply, no trig per sample)
+      const cosV = ncoRe;
+      const sinV = ncoIm;
+      // Advance NCO: (ncoRe + j*ncoIm) *= (wRe + j*wIm)
+      const newRe = ncoRe * wRe - ncoIm * wIm;
+      ncoIm = ncoRe * wIm + ncoIm * wRe;
+      ncoRe = newRe;
       const iShifted = iIn * cosV - qIn * sinV;
       const qShifted = iIn * sinV + qIn * cosV;
-      this.phaseAccum += phaseInc;
-      // Keep phase bounded
-      if (this.phaseAccum > Math.PI) this.phaseAccum -= 2 * Math.PI;
-      else if (this.phaseAccum < -Math.PI) this.phaseAccum += 2 * Math.PI;
+      // NCO magnitude correction every 1024 samples (prevent drift)
+      if ((n & 1023) === 0) {
+        const mag = Math.sqrt(ncoRe * ncoRe + ncoIm * ncoIm);
+        if (mag > 0) { ncoRe /= mag; ncoIm /= mag; }
+      }
 
       // 2. FIR low-pass filter
       this.firStateRe[this.firPos] = iShifted;
@@ -205,8 +241,10 @@ export class VirtualReceiver extends EventEmitter {
           const cross = filtQ * this.prevI - filtI * this.prevQ;
           const dot = filtI * this.prevI + filtQ * this.prevQ;
           sample = Math.atan2(cross, dot);
-          // Normalize to [-1, 1] range (max deviation = pi)
           sample /= Math.PI;
+
+          // No de-emphasis for digital modes (POCSAG/FLEX are FSK — need flat discriminator output)
+          // De-emphasis would distort the square wave edges and reduce decode rate
         } else if (this.config.mode === 'AM') {
           sample = Math.sqrt(filtI * filtI + filtQ * filtQ);
         } else if (this.config.mode === 'USB') {
@@ -226,6 +264,9 @@ export class VirtualReceiver extends EventEmitter {
 
       this.firPos = (this.firPos + 1) % numTaps;
     }
+
+    // Save NCO phase for next chunk continuity
+    this.phaseAccum = Math.atan2(ncoIm, ncoRe);
 
     const result = audioOut.subarray(0, audioIdx);
     this.emit('audio', result);
@@ -278,8 +319,14 @@ export class DecoderPipeline extends EventEmitter {
     const bin = '/opt/homebrew/bin/multimon-ng';
     try {
       this.process = spawn(bin, [
-        '-a', 'POCSAG512', '-a', 'POCSAG1200', '-a', 'POCSAG2400', '-a', 'FLEX',
-        '-t', 'raw', '-f', 'alpha', '/dev/stdin',
+        '-a', 'POCSAG512', '-a', 'POCSAG1200', '-a', 'POCSAG2400',
+        '-a', 'FLEX', '-a', 'FLEX_NEXT',
+        '-t', 'raw',
+        '-f', 'alpha',    // decode data as alphanumeric
+        '-e',             // hide empty messages
+        '-p',             // show partial messages
+        '-b', '2',        // BCH error correction level 2 (max recovery)
+        '/dev/stdin',
       ], { stdio: ['pipe', 'pipe', 'pipe'] });
 
       this.process.stdout?.on('data', (data: Buffer) => {
@@ -387,9 +434,10 @@ export class SDRMultiplexer extends EventEmitter {
   private fftSize = 2048;
   private fftWindow: Float64Array;
   private fftCount = 0;
-  private fftSkip = 4; // Process every Nth IQ chunk for FFT (throttle)
+  private fftSkip = 1; // CyberEther: compute ALL, display layer throttles
+  private _fftLogDone = false; // Process every Nth IQ chunk for FFT (throttle)
   private connected = false;
-  private centerFreq = 153.350e6;
+  private centerFreq = 153.200e6;
   private sampleRate = 2.048e6;
 
   constructor() {
@@ -416,7 +464,8 @@ export class SDRMultiplexer extends EventEmitter {
       
       try {
         this.rtlTcpProcess = spawn('/opt/homebrew/bin/rtl_tcp', ['-p', String(port)], {
-          stdio: ['pipe', 'pipe', 'pipe'],
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: true,
         });
 
         const timeout = setTimeout(() => {
@@ -443,6 +492,9 @@ export class SDRMultiplexer extends EventEmitter {
           console.log(`📡 rtl_tcp exited (code ${code})`);
           this.rtlTcpProcess = null;
         });
+
+        // Detach so tsx watch restarts don't kill rtl_tcp
+        this.rtlTcpProcess.unref();
       } catch (err) {
         reject(err);
       }
@@ -452,10 +504,22 @@ export class SDRMultiplexer extends EventEmitter {
   /** Connect to rtl_tcp and start processing */
   async connect(host = '127.0.0.1', port = 1235): Promise<boolean> {
     try {
+      // Clean up any previous client to prevent stale disconnect events
+      if (this.client) {
+        this.client.removeAllListeners();
+        try { this.client.disconnect(); } catch {}
+        this.client = null;
+      }
+      this.connected = false;
+
       this.client = new RtlTcpClient(host, port);
       this.client.on('error', () => {}); // Prevent crash on unhandled error
 
+      let iqCount = 0;
       this.client.on('iq_data', (data: { samples: Float32Array; sampleRate: number; centerFrequency: number; timestamp: number }) => {
+        iqCount++;
+        if (iqCount === 1) console.log(`📡 MUX: First IQ chunk received — ${data.samples.length} samples, cf=${data.centerFrequency}, sr=${data.sampleRate}`);
+        if (iqCount % 1000 === 0) console.log(`📡 MUX: ${iqCount} IQ chunks processed`);
         this.centerFreq = data.centerFrequency;
         this.sampleRate = data.sampleRate;
 
@@ -483,13 +547,25 @@ export class SDRMultiplexer extends EventEmitter {
       this.client.on('disconnected', () => {
         this.connected = false;
         this.emit('disconnected');
+        // Auto-reconnect after 5s if we have receivers
+        if (this.receivers.size > 0) {
+          console.log('📡 SDR Multiplexer disconnected, auto-reconnecting in 5s...');
+          setTimeout(() => {
+            if (!this.connected) {
+              this.connect(host, port).then(ok => {
+                if (ok) console.log('📡 SDR Multiplexer auto-reconnected');
+                else console.log('📡 SDR Multiplexer auto-reconnect failed');
+              }).catch(() => {});
+            }
+          }, 5000);
+        }
       });
 
       // Configure for pager frequency
       const info = await this.client.connect();
       this.client.setFrequency(this.centerFreq);
       this.client.setSampleRate(this.sampleRate);
-      this.client.setGain(40);
+      this.client.setGain(29.7); // Optimal for VHF pager band — avoids overload
       this.connected = true;
       this.emit('connected', info);
 
@@ -530,6 +606,7 @@ export class SDRMultiplexer extends EventEmitter {
       magnitudes[i] = 20 * Math.log10(Math.max(mag, 1e-10));
     }
 
+    if (!this._fftLogDone) { this._fftLogDone = true; console.log(`📡 MUX: Emitting first FFT — ${magnitudes.length} bins, cf=${centerFreq}, sr=${sampleRate}`); }
     this.emit('fft_data', {
       type: 'fft_data',
       magnitudes,
@@ -553,7 +630,7 @@ export class SDRMultiplexer extends EventEmitter {
       const decoder = new DecoderPipeline('multimon-ng');
       decoder.startMultimonNG();
       decoder.on('message', (msg) => {
-        this.emit('pager_message', msg);
+        this.emit('pager_message', { ...msg, frequency: config.centerFreq, channel: config.label || `${(config.centerFreq / 1e6).toFixed(3)} MHz` });
       });
       this.decoders.set(rx.id, decoder);
 
@@ -609,6 +686,17 @@ export class SDRMultiplexer extends EventEmitter {
   /** Auto-start: detect device, start rtl_tcp, connect, create default receivers */
   async autoStart(): Promise<boolean> {
     console.log('📡 SDR Multiplexer auto-start...');
+
+    // If already connected with receivers, just reconnect TCP
+    if (this.receivers.size > 0 && !this.connected) {
+      console.log('📡 Receivers exist, attempting reconnect only...');
+      const ok = await this.connect("127.0.0.1", 1235);
+      return ok;
+    }
+    if (this.connected && this.receivers.size > 0) {
+      console.log('📡 Already connected with receivers, skipping');
+      return true;
+    }
     
     const detection = this.detectDevice();
     if (!detection.found) {
@@ -617,25 +705,48 @@ export class SDRMultiplexer extends EventEmitter {
     }
     console.log(`📡 RTL-SDR detected: ${detection.info}`);
 
-    // Kill any existing rtl_tcp
-    try { execSync('pkill -f rtl_tcp 2>/dev/null || true'); } catch {}
-    await new Promise(r => setTimeout(r, 1000));
+    // Check if rtl_tcp is already running on port 1235
+    let rtlTcpAlive = false;
+    try {
+      const pgrep = execSync('pgrep -f "rtl_tcp.*1235" 2>/dev/null').toString().trim();
+      rtlTcpAlive = pgrep.length > 0;
+    } catch {}
+
+    if (rtlTcpAlive) {
+      console.log('📡 Existing rtl_tcp on port 1235 found, connecting to it');
+    } else {
+      // Kill any stale rtl_tcp and start fresh
+      try { execSync('pkill -9 -f rtl_tcp 2>/dev/null || true'); } catch {}
+      await new Promise(r => setTimeout(r, 2000));
+    }
 
     try {
-      await this.startRtlTcp(1235);
-      await new Promise(r => setTimeout(r, 1500)); // Give it time
-      const ok = await this.connect('127.0.0.1', 1235);
+      if (!rtlTcpAlive) {
+        await this.startRtlTcp(1235);
+        await new Promise(r => setTimeout(r, 4000)); // Give rtl_tcp time to bind
+      }
+      let ok = false; for (let retry = 0; retry < 3 && !ok; retry++) { ok = await this.connect("127.0.0.1", 1235); if (!ok) await new Promise(r => setTimeout(r, 2000)); }
       if (!ok) return false;
 
-      // Create default pager receiver
-      this.addReceiver({
-        centerFreq: 153.350e6,
-        bandwidth: 12500,
-        outputRate: 22050,
-        mode: 'NFM',
-        decoder: 'multimon-ng',
-        label: 'Pager 153.350 MHz',
-      });
+      // Create pager receivers for active UK frequencies
+      const pagerFreqs = [
+        { freq: 153.025e6, label: 'Pager 153.025 MHz' },
+        { freq: 153.075e6, label: 'Pager 153.075 MHz' },
+        { freq: 153.275e6, label: 'Pager 153.275 MHz' },
+        { freq: 153.350e6, label: 'Pager 153.350 MHz' },
+        { freq: 153.375e6, label: 'Pager 153.375 MHz' },
+        { freq: 153.425e6, label: 'Pager 153.425 MHz' },
+      ];
+      for (const pf of pagerFreqs) {
+        this.addReceiver({
+          centerFreq: pf.freq,
+          bandwidth: 12500,
+          outputRate: 22050,
+          mode: 'NFM',
+          decoder: 'multimon-ng',
+          label: pf.label,
+        });
+      }
 
       return true;
     } catch (err: any) {

@@ -292,15 +292,80 @@ export const FlowEditor: React.FC = () => {
   const [flowRunning, setFlowRunning] = useState(false);
   const [flowName, setFlowName] = useState('Untitled Flow');
   // Background flows
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Undo/redo history
+  const historyRef = useRef<HistoryEntry[]>([{ nodes: FLOW_TEMPLATES['fm-receiver'].nodes, connections: FLOW_TEMPLATES['fm-receiver'].connections }]);
+  const historyIndexRef = useRef(0);
+
+  const pushHistory = useCallback((newNodes: EditorNode[], newConns: FlowConnection[]) => {
+    const hist = historyRef.current;
+    // Truncate future
+    hist.splice(historyIndexRef.current + 1);
+    hist.push({ nodes: JSON.parse(JSON.stringify(newNodes)), connections: JSON.parse(JSON.stringify(newConns)) });
+    if (hist.length > MAX_HISTORY) hist.shift();
+    historyIndexRef.current = hist.length - 1;
+  }, []);
   const [backgroundFlows, setBackgroundFlows] = useState<any[]>([]);
   const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
   const [isBackgroundFlow, setIsBackgroundFlow] = useState(false);
   const [flowLocked, setFlowLocked] = useState(false);
   const [showBgDropdown, setShowBgDropdown] = useState(false);
 
+  // Live data tracking for flow visualization
+  const wirePulsesRef = useRef<Map<string, number>>(new Map()); // connectionId -> pulse timestamp
+  const nodeDataRef = useRef<Map<string, { count: number; lastMsg: string; lastTime: number }>>(new Map());
+  const [liveTickCounter, setLiveTickCounter] = useState(0); // force re-render on data
+
   useEffect(() => {
     fetch('/api/background-flows').then(r => r.json()).then(setBackgroundFlows).catch(() => {});
   }, []);
+
+  // WebSocket for live flow data
+  useEffect(() => {
+    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+    ws.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'pager_message') {
+          const pm = msg.message;
+          const freqMHz = pm.frequency ? (pm.frequency / 1e6).toFixed(3) : '';
+          const now = Date.now();
+
+          // Find decoder nodes matching this frequency and pulse their input wires
+          for (const node of nodes) {
+            if (node.type === 'pocsag_decoder') {
+              const nodeFreq = node.params?.freq ? (node.params.freq / 1e6).toFixed(3) : '';
+              const nodeLabel = node.params?.label || '';
+              const match = !freqMHz || nodeLabel.includes(freqMHz) || nodeFreq === freqMHz || nodes.length <= 3;
+              if (match) {
+                // Update node data
+                const content = pm.content || (pm.messageType === 'tone' ? '🔔 TONE' : `#${pm.capcode}`);
+                nodeDataRef.current.set(node.id, {
+                  count: (nodeDataRef.current.get(node.id)?.count || 0) + 1,
+                  lastMsg: content.slice(0, 40),
+                  lastTime: now,
+                });
+                // Pulse all wires connected TO this node
+                for (const conn of connections) {
+                  if (conn.targetNode === node.id) wirePulsesRef.current.set(conn.id, now);
+                  // Also pulse upstream wires (demod → decoder)
+                  const srcNode = nodes.find(n => n.id === conn.sourceNode);
+                  if (srcNode && conn.targetNode === node.id) {
+                    for (const upConn of connections) {
+                      if (upConn.targetNode === srcNode.id) wirePulsesRef.current.set(upConn.id, now);
+                    }
+                  }
+                }
+              }
+            }
+          }
+          setLiveTickCounter(c => c + 1);
+        }
+      } catch {}
+    };
+    return () => ws.close();
+  }, [nodes, connections]);
 
   const loadBackgroundFlow = useCallback((id: string) => {
     fetch(`/api/background-flows/${id}`).then(r => r.json()).then((flow: any) => {
@@ -309,7 +374,15 @@ export const FlowEditor: React.FC = () => {
         return { ...n, name: meta.name, icon: meta.icon, color: meta.color, category: meta.category, width: 160, height: 60 };
       });
       setNodes(mapped);
-      setConnections(flow.edges || []);
+      // Map background flow edge format (from/to) to editor format (sourceNode/targetNode)
+      const mappedEdges = (flow.edges || []).map((e: any) => ({
+        id: e.id,
+        sourceNode: e.sourceNode || e.from,
+        sourcePort: e.sourcePort || e.fromPort,
+        targetNode: e.targetNode || e.to,
+        targetPort: e.targetPort || e.toPort,
+      }));
+      setConnections(mappedEdges);
       setFlowName(flow.name);
       setActiveFlowId(flow.id);
       setIsBackgroundFlow(true);
@@ -317,7 +390,7 @@ export const FlowEditor: React.FC = () => {
       setSelectedNodes(new Set());
       setShowConfig(false);
       setShowBgDropdown(false);
-      pushHistory(mapped, flow.edges || []);
+      pushHistory(mapped, mappedEdges);
     }).catch(() => {});
   }, [pushHistory]);
 
@@ -333,20 +406,6 @@ export const FlowEditor: React.FC = () => {
 
   const [hoveredPort, setHoveredPort] = useState<{ nodeId: string; portId: string; portType: string; x: number; y: number } | null>(null);
   const animFrame = useRef<number>(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Undo/redo history
-  const historyRef = useRef<HistoryEntry[]>([{ nodes: FLOW_TEMPLATES['fm-receiver'].nodes, connections: FLOW_TEMPLATES['fm-receiver'].connections }]);
-  const historyIndexRef = useRef(0);
-
-  const pushHistory = useCallback((newNodes: EditorNode[], newConns: FlowConnection[]) => {
-    const hist = historyRef.current;
-    // Truncate future
-    hist.splice(historyIndexRef.current + 1);
-    hist.push({ nodes: JSON.parse(JSON.stringify(newNodes)), connections: JSON.parse(JSON.stringify(newConns)) });
-    if (hist.length > MAX_HISTORY) hist.shift();
-    historyIndexRef.current = hist.length - 1;
-  }, []);
 
   const undo = useCallback(() => {
     if (historyIndexRef.current <= 0) return;
@@ -531,7 +590,9 @@ export const FlowEditor: React.FC = () => {
 
       const src = getPortPos(srcNode, conn.sourcePort, false);
       const tgt = getPortPos(tgtNode, conn.targetPort, true);
-      const dx = Math.abs(tgt.x - src.x) * 0.5;
+      // Tighter bezier — clamp control point offset to avoid wild curves
+      const dist = Math.abs(tgt.x - src.x);
+      const dx = Math.min(dist * 0.4, 80);
 
       const portType = conn.sourcePort.split('-')[0];
       const color = PORT_COLORS[portType] || '#00e5ff';
@@ -540,23 +601,49 @@ export const FlowEditor: React.FC = () => {
       ctx.beginPath();
       ctx.moveTo(src.x, src.y);
       ctx.bezierCurveTo(src.x + dx, src.y, tgt.x - dx, tgt.y, tgt.x, tgt.y);
-      ctx.strokeStyle = color + '60';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = color + '40';
+      ctx.lineWidth = 1.5;
       ctx.shadowColor = color;
-      ctx.shadowBlur = 4;
+      ctx.shadowBlur = 3;
       ctx.stroke();
       ctx.shadowBlur = 0;
+
+      // Check for pulse on this wire
+      const pulseTime = wirePulsesRef.current.get(conn.id);
+      const pulseAge = pulseTime ? (Date.now() - pulseTime) / 1000 : 999;
+      const isPulsing = pulseAge < 1.5; // 1.5s pulse duration
 
       // Animated flow dashes
       ctx.beginPath();
       ctx.moveTo(src.x, src.y);
       ctx.bezierCurveTo(src.x + dx, src.y, tgt.x - dx, tgt.y, tgt.x, tgt.y);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([8, 6]);
-      ctx.lineDashOffset = -time * 40;
+      ctx.strokeStyle = isPulsing ? color : color + 'cc';
+      ctx.lineWidth = isPulsing ? 2.5 : 1;
+      ctx.setLineDash([6, 5]);
+      ctx.lineDashOffset = -time * 30;
+      if (isPulsing) { ctx.shadowColor = color; ctx.shadowBlur = 12; }
       ctx.stroke();
       ctx.setLineDash([]);
+      if (isPulsing) ctx.shadowBlur = 0;
+
+      // Pulse traveling dot
+      if (isPulsing) {
+        const t = Math.min(pulseAge / 0.8, 1); // dot travels in 0.8s
+        const alpha = 1 - pulseAge / 1.5;
+        // Approximate bezier position at t
+        const mt = 1 - t;
+        const px = mt*mt*mt*src.x + 3*mt*mt*t*(src.x+dx) + 3*mt*t*t*(tgt.x-dx) + t*t*t*tgt.x;
+        const py = mt*mt*mt*src.y + 3*mt*mt*t*src.y + 3*mt*t*t*tgt.y + t*t*t*tgt.y;
+        ctx.beginPath();
+        ctx.arc(px, py, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = alpha;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+      }
     }
 
     // Wire being drawn
@@ -564,7 +651,7 @@ export const FlowEditor: React.FC = () => {
       const from = drag.wireFrom;
       const to = drag.wireEnd;
       const worldTo = { x: (to.x - pan.x) / zoom, y: (to.y - pan.y) / zoom };
-      const dx = Math.abs(worldTo.x - from.x) * 0.5;
+      const dx = Math.min(Math.abs(worldTo.x - from.x) * 0.4, 80);
 
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
@@ -601,17 +688,17 @@ export const FlowEditor: React.FC = () => {
       // Header bar
       ctx.fillStyle = node.color + '20';
       ctx.beginPath();
-      ctx.roundRect(node.position.x, node.position.y, node.width, 28, [r, r, 0, 0]);
+      ctx.roundRect(node.position.x, node.position.y, node.width, 26, [r, r, 0, 0]);
       ctx.fill();
 
-      // Category line
+      // Category accent (left edge, subtle)
       ctx.fillStyle = node.color;
-      ctx.fillRect(node.position.x, node.position.y + 4, 3, node.height - 8);
+      ctx.fillRect(node.position.x, node.position.y + 6, 2, node.height - 12);
 
       // Title
       ctx.fillStyle = '#e0e0e8';
       ctx.font = '11px "JetBrains Mono"';
-      ctx.fillText(`${node.icon} ${node.name}`, node.position.x + 12, node.position.y + 18);
+      ctx.fillText(`${node.icon} ${node.name}`, node.position.x + 10, node.position.y + 17);
 
       // Ports
       const ports = NODE_PORTS[node.type] || { inputs: [], outputs: [] };
@@ -620,28 +707,80 @@ export const FlowEditor: React.FC = () => {
         const portId = `${portType}-in-${i}`;
         const pos = getPortPos(node, portId, true);
         const isHovered = hoveredPort?.nodeId === node.id && hoveredPort?.portId === portId;
-        ctx.fillStyle = PORT_COLORS[portType] || '#666';
-        ctx.beginPath(); ctx.arc(pos.x, pos.y, isHovered ? 7 : 5, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#0a0a0f'; ctx.lineWidth = 2; ctx.stroke();
-        // Port label (always show, dim unless hovered)
-        ctx.fillStyle = isHovered ? (PORT_COLORS[portType] || '#666') : (PORT_COLORS[portType] + '60' || '#666');
-        ctx.font = `${isHovered ? 9 : 8}px "JetBrains Mono"`;
-        ctx.fillText(portType.toUpperCase(), pos.x + 8, pos.y + 3);
+        const color = PORT_COLORS[portType] || '#666';
+        // Port dot
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(pos.x, pos.y, isHovered ? 6 : 4, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#0a0a0f'; ctx.lineWidth = 1.5; ctx.stroke();
+        // Label inside node
+        ctx.fillStyle = isHovered ? color : color + '50';
+        ctx.font = '7px "JetBrains Mono"';
+        ctx.fillText(portType.toUpperCase(), pos.x + 10, pos.y + 3);
       });
 
       ports.outputs.forEach((portType, i) => {
         const portId = `${portType}-out-${i}`;
         const pos = getPortPos(node, portId, false);
         const isHovered = hoveredPort?.nodeId === node.id && hoveredPort?.portId === portId;
-        ctx.fillStyle = PORT_COLORS[portType] || '#666';
-        ctx.beginPath(); ctx.arc(pos.x, pos.y, isHovered ? 7 : 5, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#0a0a0f'; ctx.lineWidth = 2; ctx.stroke();
-        ctx.fillStyle = isHovered ? (PORT_COLORS[portType] || '#666') : (PORT_COLORS[portType] + '60' || '#666');
-        ctx.font = `${isHovered ? 9 : 8}px "JetBrains Mono"`;
+        const color = PORT_COLORS[portType] || '#666';
+        // Port dot
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(pos.x, pos.y, isHovered ? 6 : 4, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#0a0a0f'; ctx.lineWidth = 1.5; ctx.stroke();
+        // Label inside node
+        ctx.fillStyle = isHovered ? color : color + '50';
+        ctx.font = '7px "JetBrains Mono"';
         ctx.textAlign = 'right';
-        ctx.fillText(portType.toUpperCase(), pos.x - 8, pos.y + 3);
+        ctx.fillText(portType.toUpperCase(), pos.x - 10, pos.y + 3);
         ctx.textAlign = 'left';
       });
+
+      // Live data badge for decoder nodes
+      const nodeData = nodeDataRef.current.get(node.id);
+      if (nodeData && (node.type === 'pocsag_decoder' || node.type.includes('decoder'))) {
+        const age = (Date.now() - nodeData.lastTime) / 1000;
+        const fresh = age < 3;
+
+        // Message count badge (top-right corner)
+        const badgeX = node.position.x + node.width - 8;
+        const badgeY = node.position.y + 8;
+        const badgeText = String(nodeData.count);
+        const badgeW = Math.max(ctx.measureText(badgeText).width + 10, 20);
+        ctx.font = 'bold 9px "JetBrains Mono"';
+        ctx.fillStyle = fresh ? '#00e676' : '#00e67680';
+        ctx.beginPath();
+        ctx.roundRect(badgeX - badgeW, badgeY - 7, badgeW, 14, 7);
+        ctx.fill();
+        ctx.fillStyle = '#0a0a0f';
+        ctx.textAlign = 'center';
+        ctx.fillText(badgeText, badgeX - badgeW / 2, badgeY + 3);
+        ctx.textAlign = 'left';
+
+        // Last message preview (bottom of node)
+        if (nodeData.lastMsg) {
+          ctx.font = '7px "JetBrains Mono"';
+          ctx.fillStyle = fresh ? '#e0e0e8' : '#e0e0e860';
+          const previewY = node.position.y + node.height - 6;
+          const maxW = node.width - 16;
+          let preview = nodeData.lastMsg;
+          while (ctx.measureText(preview).width > maxW && preview.length > 3) preview = preview.slice(0, -1);
+          if (preview !== nodeData.lastMsg) preview += '…';
+          ctx.fillText(preview, node.position.x + 8, previewY);
+        }
+
+        // Pulse glow on fresh data
+        if (fresh) {
+          const glowAlpha = Math.max(0, 0.3 * (1 - age / 3));
+          ctx.strokeStyle = `rgba(0, 230, 118, ${glowAlpha})`;
+          ctx.lineWidth = 2;
+          ctx.shadowColor = '#00e676';
+          ctx.shadowBlur = 15;
+          ctx.beginPath();
+          ctx.roundRect(node.position.x, node.position.y, node.width, node.height, 10);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+      }
     }
 
     // Box selection
@@ -710,7 +849,7 @@ export const FlowEditor: React.FC = () => {
     }
 
     animFrame.current = requestAnimationFrame(render);
-  }, [nodes, connections, pan, zoom, selectedNodes, getPortPos, drag, hoveredPort]);
+  }, [nodes, connections, pan, zoom, selectedNodes, getPortPos, drag, hoveredPort, liveTickCounter]);
 
   useEffect(() => {
     animFrame.current = requestAnimationFrame(render);
@@ -856,22 +995,62 @@ export const FlowEditor: React.FC = () => {
     setDrag({ type: null });
   }, [drag, nodes, connections, screenToWorld, findPort, pushHistory]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+  const zoomTo = useCallback((newZ: number, cx?: number, cy?: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const mx = cx ?? rect.width / 2;
+    const my = cy ?? rect.height / 2;
+    const clamped = Math.max(0.1, Math.min(5, newZ));
     setZoom(z => {
-      const newZ = Math.max(0.2, Math.min(3, z * factor));
-      // Zoom toward cursor
+      setPan(p => ({
+        x: mx - (mx - p.x) * (clamped / z),
+        y: my - (my - p.y) * (clamped / z),
+      }));
+      return clamped;
+    });
+  }, []);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // Smoother zoom: smaller steps, toward cursor
+    const factor = e.deltaY > 0 ? 0.92 : 1 / 0.92;
+    setZoom(z => {
+      const newZ = Math.max(0.1, Math.min(5, z * factor));
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
       setPan(p => ({
         x: mx - (mx - p.x) * (newZ / z),
         y: my - (my - p.y) * (newZ / z),
       }));
       return newZ;
     });
+  }, []);
+
+  const fitToView = useCallback(() => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect || nodes.length === 0) return;
+    const pad = 80;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodes.forEach(n => {
+      minX = Math.min(minX, n.position.x);
+      minY = Math.min(minY, n.position.y);
+      maxX = Math.max(maxX, n.position.x + (n.width || 140));
+      maxY = Math.max(maxY, n.position.y + (n.height || 60));
+    });
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+    const newZoom = Math.max(0.1, Math.min(2, Math.min((rect.width - pad * 2) / rangeX, (rect.height - pad * 2) / rangeY)));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    setZoom(newZoom);
+    setPan({ x: rect.width / 2 - cx * newZoom, y: rect.height / 2 - cy * newZoom });
+  }, [nodes]);
+
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -1089,9 +1268,10 @@ export const FlowEditor: React.FC = () => {
 
         {/* Zoom controls */}
         <div className="flex items-center gap-0.5">
-          <button onClick={() => setZoom(z => Math.max(0.2, z * 0.8))} className="bg-forge-bg/90 border border-forge-border px-2 py-1.5 rounded-l text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan transition-all">−</button>
-          <span className="bg-forge-bg/80 border-y border-forge-border px-2 py-1.5 text-[10px] font-mono text-forge-text-dim">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom(z => Math.min(3, z * 1.25))} className="bg-forge-bg/90 border border-forge-border px-2 py-1.5 rounded-r text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan transition-all">+</button>
+          <button onClick={fitToView} title="Fit all nodes" className="bg-forge-bg/90 border border-forge-border px-2 py-1.5 rounded text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan transition-all mr-1">⊞</button>
+          <button onClick={() => zoomTo(zoom * 0.8)} title="Zoom out" className="bg-forge-bg/90 border border-forge-border px-2 py-1.5 rounded-l text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan transition-all">−</button>
+          <button onClick={resetView} title="Reset to 100%" className="bg-forge-bg/80 border-y border-forge-border px-2 py-1.5 text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan cursor-pointer transition-all">{Math.round(zoom * 100)}%</button>
+          <button onClick={() => zoomTo(zoom * 1.25)} title="Zoom in" className="bg-forge-bg/90 border border-forge-border px-2 py-1.5 rounded-r text-[10px] font-mono text-forge-text-dim hover:text-forge-cyan transition-all">+</button>
         </div>
 
         {/* Status */}
@@ -1207,7 +1387,7 @@ export const FlowEditor: React.FC = () => {
             }}
             className="px-3 py-1.5 rounded bg-green-600 hover:bg-green-500 text-white text-xs font-mono transition-colors flex items-center gap-1"
           >
-            \u25b6 Run Flow
+            ▶ Run Flow
           </button>
         ) : (
           <button
@@ -1217,7 +1397,7 @@ export const FlowEditor: React.FC = () => {
             }}
             className="px-3 py-1.5 rounded bg-red-600 hover:bg-red-500 text-white text-xs font-mono transition-colors flex items-center gap-1"
           >
-            \u23f9 Stop
+            ⏹ Stop
           </button>
         )}
         <div className={"w-2 h-2 rounded-full self-center " + (flowRunning ? "bg-green-500 animate-pulse" : "bg-forge-border")} />

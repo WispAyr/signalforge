@@ -127,7 +127,7 @@ export class ADSBDecoder extends EventEmitter {
       }, 12000);
     } catch (err: any) {
       console.log(`✈️  ADS-B: OpenSky unavailable (${err.message}), falling back to demo mode`);
-      this.startDemoMode();
+      console.log("✈️  ADS-B: No live source available, staying offline"); // demo disabled
     }
   }
 

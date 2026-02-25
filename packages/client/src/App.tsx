@@ -62,11 +62,13 @@ const RulesView = lazy(() => import('./components/RulesView').then(m => ({ defau
 const DataFlowEditor = lazy(() => import('./components/DataFlowEditor').then(m => ({ default: m.DataFlowEditor })));
 const APRSView = lazy(() => import('./components/APRSView').then(m => ({ default: m.APRSView })));
 const WebSDRView = lazy(() => import('./components/WebSDRView').then(m => ({ default: m.WebSDRView })));
+const AirportScannerView = lazy(() => import('./components/AirportScannerView').then(m => ({ default: m.AirportScannerView })));
+const UHFScannerView = lazy(() => import('./components/UHFScannerView').then(m => ({ default: m.UHFScannerView })));
 
 // Node palette sidebar (only for flow editor)
 const FlowSidebar = lazy(() => import('./components/Sidebar').then(m => ({ default: m.Sidebar })));
 
-export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'sdr' | 'analyzer' | 'scheduler' | 'signals' | 'settings' | 'scanner' | 'timeline' | 'telemetry' | 'plugins' | 'edge' | 'satnogs' | 'geofence' | 'voice' | 'propagation' | 'logbook' | 'analytics' | 'dxcluster' | 'audio' | 'rtl433' | 'pager' | 'subghz' | 'sstv' | 'meters' | 'wifi' | 'bluetooth' | 'tscm' | 'meshtastic' | 'numberstations' | 'fieldmode' | 'vdl2' | 'globe' | 'dsp' | 'narrator' | 'community' | 'academy' | 'history' | 'integrations' | 'equipment' | 'cinematic' | 'websdr' | 'aprs' | 'rules' | 'dataflow';
+export type View = 'dashboard' | 'flow' | 'waterfall' | 'map' | 'sdr' | 'analyzer' | 'scheduler' | 'signals' | 'settings' | 'scanner' | 'timeline' | 'telemetry' | 'plugins' | 'edge' | 'satnogs' | 'geofence' | 'voice' | 'propagation' | 'logbook' | 'analytics' | 'dxcluster' | 'audio' | 'rtl433' | 'pager' | 'subghz' | 'sstv' | 'meters' | 'wifi' | 'bluetooth' | 'tscm' | 'meshtastic' | 'numberstations' | 'fieldmode' | 'vdl2' | 'globe' | 'dsp' | 'narrator' | 'community' | 'academy' | 'history' | 'integrations' | 'equipment' | 'cinematic' | 'websdr' | 'aprs' | 'rules' | 'dataflow' | 'airport' | 'uhfscanner';
 
 // Loading skeleton for lazy views
 const ViewLoader: React.FC = () => (
@@ -186,6 +188,8 @@ export const App: React.FC = () => {
       case 'aprs': return <APRSView />;
       case 'rules': return <RulesView />;
       case 'dataflow': return <DataFlowEditor />;
+      case 'airport': return <AirportScannerView />;
+      case 'uhfscanner': return <UHFScannerView />;
       case 'settings': return <SettingsPage />;
       default: return <Dashboard onNavigate={changeView} />;
     }

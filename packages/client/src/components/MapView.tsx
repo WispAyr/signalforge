@@ -95,6 +95,20 @@ export const MapView: React.FC = () => {
           if (msg.type === 'adsb') setAircraft(msg.aircraft);
           if (msg.type === 'ais') setVessels(msg.vessels);
           if (msg.type === 'aprs') setAprsStations(msg.stations);
+          if (msg.type === 'aprs_update' && msg.station) {
+            setAprsStations(prev => {
+              const idx = prev.findIndex(s => s.callsign === msg.station.callsign);
+              if (idx >= 0) { const n = [...prev]; n[idx] = msg.station; return n; }
+              return [...prev, msg.station];
+            });
+          }
+          if (msg.type === 'ais_update' && msg.vessel) {
+            setVessels(prev => {
+              const idx = prev.findIndex(v => v.mmsi === msg.vessel.mmsi);
+              if (idx >= 0) { const n = [...prev]; n[idx] = msg.vessel; return n; }
+              return prev.length >= 5000 ? prev : [...prev, msg.vessel];
+            });
+          }
         } catch { /* ignore binary */ }
       };
     } catch { /* ignore */ }
@@ -289,7 +303,7 @@ export const MapView: React.FC = () => {
         if (st.latitude === undefined || st.longitude === undefined) continue;
         const pos = toScreen(st.longitude, st.latitude, w, h, cz, cpx, cpy);
         if (pos.x < -50 || pos.x > w + 50 || pos.y < -50 || pos.y > h + 50) continue;
-        const isSelected = selectedItem === `aprs-${st.callsign}`;
+        const isSelected = selectedItem === `aprs-${st.callsign || 'unknown'}`;
         const age = Date.now() - st.lastSeen;
         const alpha = Math.max(0.3, 1 - age / 3600000);
 
@@ -307,7 +321,7 @@ export const MapView: React.FC = () => {
         }
 
         allTexts.push({
-          text: st.callsign, x: pos.x + 7 * dpr, y: pos.y - 3 * dpr,
+          text: st.callsign || 'Unknown', x: pos.x + 7 * dpr, y: pos.y - 3 * dpr,
           color: `rgba(255, 23, 68, ${isSelected ? 1 : alpha * 0.7})`,
           fontSize: (isSelected ? 10 : 8) * dpr,
         });

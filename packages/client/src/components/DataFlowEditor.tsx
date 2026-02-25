@@ -468,10 +468,23 @@ export function DataFlowEditor() {
     setDrag({ type: null });
   }, [drag, screenToCanvas, hitPort]);
 
+  const zoomTo = useCallback((newZ: number, cx?: number, cy?: number) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mx = cx ?? rect.width / 2;
+    const my = cy ?? rect.height / 2;
+    const clamped = Math.max(0.1, Math.min(5, newZ));
+    setPan(prev => ({
+      x: mx - (mx - prev.x) * (clamped / zoom),
+      y: my - (my - prev.y) * (clamped / zoom),
+    }));
+    setZoom(clamped);
+  }, [zoom]);
+
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newZoom = Math.max(0.2, Math.min(3, zoom * delta));
+    const factor = e.deltaY > 0 ? 0.92 : 1 / 0.92;
+    const newZoom = Math.max(0.1, Math.min(5, zoom * factor));
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
@@ -481,6 +494,31 @@ export function DataFlowEditor() {
     }));
     setZoom(newZoom);
   }, [zoom]);
+
+  const fitToView = useCallback(() => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect || nodes.length === 0) return;
+    const pad = 80;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodes.forEach(n => {
+      minX = Math.min(minX, n.position.x);
+      minY = Math.min(minY, n.position.y);
+      maxX = Math.max(maxX, n.position.x + (n.width || 160));
+      maxY = Math.max(maxY, n.position.y + (n.height || 60));
+    });
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+    const newZoom = Math.max(0.1, Math.min(2, Math.min((rect.width - pad * 2) / rangeX, (rect.height - pad * 2) / rangeY)));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    setZoom(newZoom);
+    setPan({ x: rect.width / 2 - cx * newZoom, y: rect.height / 2 - cy * newZoom });
+  }, [nodes]);
+
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
 
   const onContextMenu = useCallback((e: React.MouseEvent) => e.preventDefault(), []);
 
@@ -683,7 +721,13 @@ export function DataFlowEditor() {
           >
             🗑️ Clear
           </button>
-          <span className="text-[10px] text-gray-600 ml-2">{nodes.length} nodes · {connections.length} wires · {Math.round(zoom * 100)}%</span>
+          <span className="text-[10px] text-gray-600 ml-2">{nodes.length} nodes · {connections.length} wires</span>
+          <div className="flex items-center gap-0.5 ml-2">
+            <button onClick={fitToView} title="Fit all nodes" className="bg-[#141428] border border-[#2a2a4a] px-2 py-1 rounded text-[10px] font-mono text-gray-500 hover:text-amber-400 transition-all mr-1">⊞</button>
+            <button onClick={() => zoomTo(zoom * 0.8)} title="Zoom out" className="bg-[#141428] border border-[#2a2a4a] px-2 py-1 rounded-l text-[10px] font-mono text-gray-500 hover:text-amber-400 transition-all">−</button>
+            <button onClick={resetView} title="Reset to 100%" className="bg-[#141428] border-y border-[#2a2a4a] px-2 py-1 text-[10px] font-mono text-gray-500 hover:text-amber-400 cursor-pointer transition-all">{Math.round(zoom * 100)}%</button>
+            <button onClick={() => zoomTo(zoom * 1.25)} title="Zoom in" className="bg-[#141428] border border-[#2a2a4a] px-2 py-1 rounded-r text-[10px] font-mono text-gray-500 hover:text-amber-400 transition-all">+</button>
+          </div>
         </div>
 
         <canvas

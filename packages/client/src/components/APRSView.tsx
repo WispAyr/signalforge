@@ -90,8 +90,9 @@ export const APRSView: React.FC = () => {
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
-        if (msg.type === 'aprs') {
+        if ((msg.type === 'aprs' || msg.type === 'aprs_update') && msg.station) {
           const station = msg.station as APRSStation;
+          if (!station.callsign) return;
           setStations(prev => {
             const idx = prev.findIndex(s => s.callsign === station.callsign);
             if (idx >= 0) { const next = [...prev]; next[idx] = station; return next; }
