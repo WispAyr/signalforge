@@ -1,0 +1,15 @@
+{
+  "id": "weather-overlay",
+  "name": "Weather Overlay",
+  "version": "1.0.0",
+  "description": "Fetches weather data from Open-Meteo for the observer location and broadcasts conditions to connected clients. Useful for correlating propagation with weather.",
+  "author": "SignalForge",
+  "icon": "🌤️",
+  "entry": "index.js",
+  "provides": ["view", "integration"],
+  "requires": [],
+  "config": {
+    "refreshInterval": { "type": "number", "required": false, "default": 300, "description": "Refresh interval in seconds" },
+    "units": { "type": "string", "required": false, "default": "metric", "description": "Units: metric or imperial" }
+  }
+}

@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { COLORMAPS } from '@signalforge/shared';
 import type { ColormapName } from '@signalforge/shared';
 import { PopOutButton } from './ui/PopOutButton';
+import { getGpuDspEngine } from '../gpu/engine';
 
 // ── FFT helpers ──
 function blackmanHarris(N: number): Float32Array {
@@ -433,7 +434,14 @@ export const WaterfallView: React.FC = () => {
         if (floats.length === fs) {
           ring.push(floats);
         } else if (floats.length >= fs * 2) {
-          ring.push(iqToPowerDb(floats, fs, windowRef.current));
+          // Use GPU FFT when available, fall back to JS
+          getGpuDspEngine().then(engine => {
+            engine.fftWindowed(floats, fs, windowRef.current).then(spectrum => {
+              ring.push(spectrum);
+            });
+          }).catch(() => {
+            ring.push(iqToPowerDb(floats, fs, windowRef.current));
+          });
         }
       }
       if (!sdrConnectedRef.current) { sdrConnectedRef.current = true; setSdrConnected(true); }

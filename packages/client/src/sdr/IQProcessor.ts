@@ -97,22 +97,14 @@ export class IQProcessor {
       const n = Math.min(this.fftSize * 2, iq.length);
       const chunk = iq.subarray(0, n);
 
+      // engine.fft() already returns magnitude in dB (full N bins)
       const spectrum = await engine.fft(chunk, this.fftSize);
-
-      // Convert to magnitude (dB)
-      const mag = new Float32Array(this.fftSize);
-      for (let i = 0; i < this.fftSize; i++) {
-        const re = spectrum[i * 2] || 0;
-        const im = spectrum[i * 2 + 1] || 0;
-        const power = re * re + im * im;
-        mag[i] = 10 * Math.log10(power + 1e-20);
-      }
 
       // FFT shift (swap halves for centered spectrum)
       const half = this.fftSize / 2;
       const shifted = new Float32Array(this.fftSize);
-      shifted.set(mag.subarray(half), 0);
-      shifted.set(mag.subarray(0, half), half);
+      shifted.set(spectrum.subarray(half), 0);
+      shifted.set(spectrum.subarray(0, half), half);
 
       for (const cb of this.spectrumCallbacks) {
         cb(shifted, this.centerFreq, this.sampleRate);

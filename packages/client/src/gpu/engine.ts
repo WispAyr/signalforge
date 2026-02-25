@@ -65,6 +65,16 @@ function cpuFMDemod(iData: Float32Array, qData: Float32Array): Float32Array {
   return output;
 }
 
+export interface DspMetrics {
+  fftCount: number;
+  fftSamplesTotal: number;
+  fftTimeMs: number;
+  filterCount: number;
+  demodCount: number;
+  lastFftMs: number;
+  samplesPerSec: number;
+}
+
 export class GpuDspEngine {
   private device: GPUDevice | null = null;
   private adapter: GPUAdapter | null = null;
@@ -82,8 +92,31 @@ export class GpuDspEngine {
     maxComputeWorkgroupsPerDimension: 0,
   };
 
+  // Performance metrics
+  private _metrics: DspMetrics = {
+    fftCount: 0, fftSamplesTotal: 0, fftTimeMs: 0,
+    filterCount: 0, demodCount: 0, lastFftMs: 0, samplesPerSec: 0,
+  };
+  private _metricsWindowStart = performance.now();
+
   get status(): GpuStatus { return this._status; }
   get isGPU(): boolean { return this._status.available; }
+  get metrics(): DspMetrics { return this._metrics; }
+
+  /** Reset metrics window (call once per second for rolling stats) */
+  resetMetricsWindow(): void {
+    const now = performance.now();
+    const elapsed = (now - this._metricsWindowStart) / 1000;
+    if (elapsed > 0) {
+      this._metrics.samplesPerSec = this._metrics.fftSamplesTotal / elapsed;
+    }
+    this._metrics.fftCount = 0;
+    this._metrics.fftSamplesTotal = 0;
+    this._metrics.fftTimeMs = 0;
+    this._metrics.filterCount = 0;
+    this._metrics.demodCount = 0;
+    this._metricsWindowStart = now;
+  }
 
   async init(): Promise<GpuStatus> {
     if (!navigator.gpu) {
@@ -139,27 +172,75 @@ export class GpuDspEngine {
   }
 
   /**
-   * FFT on interleaved IQ data. Returns magnitude spectrum in dB.
+   * FFT on interleaved IQ data. Returns magnitude spectrum in dB (full N bins).
    */
   async fft(iq: Float32Array, size?: number): Promise<Float32Array> {
     const n = size ?? iq.length / 2;
+    const t0 = performance.now();
+    let result: Float32Array;
+
     if (this.gpuFft && this._status.available) {
-      return this.gpuFft.fft(iq, n);
+      result = await this.gpuFft.fft(iq, n);
+    } else {
+      // JS fallback
+      const real = new Float32Array(n);
+      const imag = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        real[i] = iq[i * 2] ?? 0;
+        imag[i] = iq[i * 2 + 1] ?? 0;
+      }
+      cpuFFT(real, imag);
+      result = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const mag = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]) / n;
+        result[i] = 20 * Math.log10(Math.max(mag, 1e-10));
+      }
     }
-    // JS fallback
-    const real = new Float32Array(n);
-    const imag = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      real[i] = iq[i * 2] ?? 0;
-      imag[i] = iq[i * 2 + 1] ?? 0;
+
+    const dt = performance.now() - t0;
+    this._metrics.fftCount++;
+    this._metrics.fftSamplesTotal += n;
+    this._metrics.fftTimeMs += dt;
+    this._metrics.lastFftMs = dt;
+    return result;
+  }
+
+  /**
+   * Windowed FFT on interleaved IQ data with FFT-shift.
+   * Returns FFT-shifted magnitude spectrum in dB (N bins).
+   * Primary entry point for waterfall/spectrum display.
+   */
+  async fftWindowed(iq: Float32Array, size: number, window: Float32Array): Promise<Float32Array> {
+    const t0 = performance.now();
+    let result: Float32Array;
+
+    if (this.gpuFft && this._status.available) {
+      result = await this.gpuFft.fftWindowed(iq, size, window);
+    } else {
+      // JS fallback: window + FFT + magnitude + shift
+      const real = new Float32Array(size);
+      const imag = new Float32Array(size);
+      const offset = iq.length > size * 2 ? iq.length - size * 2 : 0;
+      for (let i = 0; i < size; i++) {
+        real[i] = (iq[offset + i * 2] ?? 0) * window[i];
+        imag[i] = (iq[offset + i * 2 + 1] ?? 0) * window[i];
+      }
+      cpuFFT(real, imag);
+      const half = size >> 1;
+      result = new Float32Array(size);
+      for (let i = 0; i < size; i++) {
+        const j = (i + half) % size;
+        const pwr = real[j] * real[j] + imag[j] * imag[j];
+        result[i] = 10 * Math.log10(pwr + 1e-20);
+      }
     }
-    cpuFFT(real, imag);
-    const spectrum = new Float32Array(n / 2);
-    for (let i = 0; i < n / 2; i++) {
-      const mag = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]) / n;
-      spectrum[i] = 20 * Math.log10(Math.max(mag, 1e-10));
-    }
-    return spectrum;
+
+    const dt = performance.now() - t0;
+    this._metrics.fftCount++;
+    this._metrics.fftSamplesTotal += size;
+    this._metrics.fftTimeMs += dt;
+    this._metrics.lastFftMs = dt;
+    return result;
   }
 
   /**
@@ -172,8 +253,8 @@ export class GpuDspEngine {
     const r = new Float32Array(real);
     const im = new Float32Array(imag);
     cpuFFT(r, im);
-    const spectrum = new Float32Array(r.length / 2);
-    for (let i = 0; i < r.length / 2; i++) {
+    const spectrum = new Float32Array(r.length);
+    for (let i = 0; i < r.length; i++) {
       const mag = Math.sqrt(r[i] * r[i] + im[i] * im[i]) / r.length;
       spectrum[i] = 20 * Math.log10(Math.max(mag, 1e-10));
     }
@@ -181,6 +262,7 @@ export class GpuDspEngine {
   }
 
   async filter(input: Float32Array, taps: Float32Array): Promise<Float32Array> {
+    this._metrics.filterCount++;
     if (this.gpuFilter && this._status.available) {
       return this.gpuFilter.filter(input, taps);
     }
@@ -188,6 +270,7 @@ export class GpuDspEngine {
   }
 
   async fmDemod(iData: Float32Array, qData: Float32Array): Promise<Float32Array> {
+    this._metrics.demodCount++;
     if (this.gpuDemod && this._status.available) {
       return this.gpuDemod.demod(iData, qData);
     }
@@ -195,8 +278,12 @@ export class GpuDspEngine {
   }
 
   destroy(): void {
+    this.gpuFft?.destroy();
     this.device?.destroy();
     this.device = null;
+    this.gpuFft = null;
+    this.gpuFilter = null;
+    this.gpuDemod = null;
     this._status.available = false;
     this._status.backend = 'js-fallback';
   }
@@ -213,4 +300,5 @@ export async function getGpuDspEngine(): Promise<GpuDspEngine> {
   return _engine;
 }
 
+export type { DspMetrics };
 export { GPUFilter, type FilterType } from './filter';

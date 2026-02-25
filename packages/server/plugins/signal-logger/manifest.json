@@ -1,0 +1,19 @@
+{
+  "id": "signal-logger",
+  "name": "Signal Logger",
+  "version": "1.0.0",
+  "description": "Logs all decoded signals (ADS-B, AIS, APRS, pager) to CSV files for offline analysis. Creates daily log files with timestamps and signal metadata.",
+  "author": "SignalForge",
+  "icon": "📝",
+  "entry": "index.js",
+  "provides": ["integration"],
+  "requires": [],
+  "config": {
+    "logDir": { "type": "string", "required": false, "default": "data/signal-logs", "description": "Directory for CSV log files" },
+    "logAdsb": { "type": "boolean", "required": false, "default": true },
+    "logAis": { "type": "boolean", "required": false, "default": true },
+    "logAprs": { "type": "boolean", "required": false, "default": true },
+    "logPager": { "type": "boolean", "required": false, "default": true },
+    "rotateDaily": { "type": "boolean", "required": false, "default": true }
+  }
+}
