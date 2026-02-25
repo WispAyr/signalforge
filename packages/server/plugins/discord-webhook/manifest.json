@@ -1,0 +1,18 @@
+{
+  "id": "discord-webhook",
+  "name": "Discord Webhook",
+  "version": "1.0.0",
+  "description": "Posts interesting events to a Discord webhook — new aircraft, emergency squawks, pager alerts, and signal anomalies.",
+  "author": "SignalForge",
+  "icon": "💬",
+  "entry": "index.js",
+  "provides": ["integration"],
+  "requires": [],
+  "config": {
+    "webhookUrl": { "type": "string", "required": true, "description": "Discord webhook URL" },
+    "notifyEmergency": { "type": "boolean", "required": false, "default": true, "description": "Post emergency squawk codes (7500/7600/7700)" },
+    "notifyPagerAlerts": { "type": "boolean", "required": false, "default": true, "description": "Post matched pager keyword alerts" },
+    "notifyNewAircraft": { "type": "boolean", "required": false, "default": false, "description": "Post first-seen aircraft callsigns" },
+    "cooldownSeconds": { "type": "number", "required": false, "default": 60, "description": "Minimum seconds between posts for same event type" }
+  }
+}

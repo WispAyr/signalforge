@@ -57,6 +57,7 @@ import { FieldModeService } from './fieldmode/service.js';
 import { VDL2Service } from './vdl2/service.js';
 // Phase 8 imports
 import { NarratorService } from './narrator/service.js';
+import { DecoderManager } from './decoders/manager.js';
 import { CommunityService } from './community/service.js';
 import { AcademyService } from './academy/service.js';
 import { getModules, getLessons, getLesson, getLessonsByModule } from './academy/content.js';
@@ -206,6 +207,7 @@ const fieldModeService = new FieldModeService();
 const vdl2Service = new VDL2Service();
 // Phase 8
 const narratorService = new NarratorService();
+const decoderManager = new DecoderManager();
 const communityService = new CommunityService();
 const academyService = new AcademyService();
 const historyService = new HistoryService();
@@ -313,7 +315,29 @@ signalClassifier.on('classification', (result) => {
 });
 
 narratorService.on('narration', (narration) => {
+  broadcast({ type: 'narrator_update', narration });
   broadcast({ type: 'narration', narration });
+});
+
+// Decoder Manager events
+decoderManager.on('decoder_message', ({ decoder, data }) => {
+  broadcast({ type: 'decoder_message', decoder, data });
+  // Feed rtl_433 data into rtl433Service for existing UI
+  if (decoder === 'rtl_433' && data.type === 'ism_device') {
+    rtl433Service.processMessage(data);
+  }
+  // Feed pager data into pagerService
+  if (decoder === 'multimon-ng' && data.type === 'pager') {
+    pagerService.processMessage(data);
+  }
+});
+decoderManager.on('decoder_started', (name) => {
+  broadcast({ type: 'decoder_status', decoders: decoderManager.getDecoders() });
+  console.log(`📡 Decoder started: ${name}`);
+});
+decoderManager.on('decoder_stopped', (name) => {
+  broadcast({ type: 'decoder_status', decoders: decoderManager.getDecoders() });
+  console.log(`📡 Decoder stopped: ${name}`);
 });
 
 telemetryService.on('frame', (frame) => {
@@ -451,6 +475,45 @@ aisDecoder.on('message', (msg) => {
 locationService.on('location', (loc) => {
   broadcast({ type: 'location', observer: loc });
 });
+
+// Wire live data into narrator every 25 seconds (just before narration cycle)
+setInterval(() => {
+  narratorService.updateRFState({
+    adsbAircraft: adsbDecoder.getAircraft().map(a => ({
+      callsign: a.callsign || '', altitude: a.altitude || 0,
+      heading: a.heading || 0, speed: a.speed || 0,
+      lat: a.latitude, lon: a.longitude, squawk: a.squawk,
+      verticalRate: a.verticalRate,
+    })),
+    aisVessels: aisDecoder.getVessels().slice(0, 50).map(v => ({
+      name: v.shipName || '', mmsi: v.mmsi, type: v.shipTypeName || '',
+      sog: v.sog || 0, cog: v.cog || 0, destination: v.destination,
+      navStatus: v.navStatusName,
+    })),
+    aprsStations: aprsDecoder.getStations().slice(0, 30).map(s => ({
+      callsign: s.callsign, lat: s.latitude || 0, lon: s.longitude || 0,
+      speed: s.lastPacket?.speed || 0, course: s.lastPacket?.course || 0,
+      comment: s.comment || '',
+    })),
+    decoderStatus: decoderManager.getDecoders().map(d => ({
+      name: d.name, running: d.running,
+      messagesDecoded: d.messagesDecoded, lastMessage: d.lastMessage,
+    })),
+    ismDevices: rtl433Service.getDevices().map(d => ({
+      model: d.model, type: d.deviceType,
+      lastReading: d.lastReading as any,
+    })),
+    pagerMessages: pagerService.getMessages(5).map(m => ({
+      protocol: m.protocol, content: m.content,
+      capcode: m.capcode, timestamp: m.timestamp,
+    })),
+    sdrStatus: {
+      connected: sdrMultiplexer.getStatus().connected,
+      frequency: sdrMultiplexer.getStatus().centerFreq,
+      sampleRate: sdrMultiplexer.getStatus().sampleRate,
+    },
+  });
+}, 25000);
 
 // Start decoders
 adsbDecoder.start();
@@ -2634,6 +2697,40 @@ app.put('/api/settings/:key', (req, res) => {
 // ============================================================================
 // REST API — Phase 8: AI Signal Narrator
 // ============================================================================
+// ============================================================================
+// REST API — Subprocess Decoder Manager
+// ============================================================================
+app.get('/api/decoders', (_req, res) => res.json(decoderManager.getDecoders()));
+app.get('/api/decoders/:name', (req, res) => {
+  const d = decoderManager.getDecoder(req.params.name);
+  if (!d) return res.status(404).json({ error: 'Decoder not found' });
+  res.json(d);
+});
+app.post('/api/decoders/:name/start', (req, res) => {
+  const ok = decoderManager.startDecoder(req.params.name);
+  if (!ok) return res.status(400).json({ error: 'Failed to start decoder (binary not found or already running)' });
+  res.json({ ok: true, status: decoderManager.getDecoder(req.params.name) });
+});
+app.post('/api/decoders/:name/stop', (req, res) => {
+  const ok = decoderManager.stopDecoder(req.params.name);
+  if (!ok) return res.status(404).json({ error: 'Decoder not found' });
+  res.json({ ok: true });
+});
+app.get('/api/decoders/:name/output', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 50;
+  res.json(decoderManager.getOutput(req.params.name, limit));
+});
+
+// Narrator style endpoint
+app.get('/api/narrator/style', (_req, res) => res.json({ style: narratorService.getStyle(), provider: narratorService.getActiveProvider() }));
+app.post('/api/narrator/style', (req, res) => {
+  const { style } = req.body;
+  if (style && ['technical', 'casual', 'dramatic'].includes(style)) {
+    narratorService.setStyle(style);
+  }
+  res.json({ style: narratorService.getStyle() });
+});
+
 app.post('/api/narrator/narrate', (req, res) => res.json(narratorService.narrate(req.body)));
 app.get('/api/narrator/narrations', (req, res) => res.json(narratorService.getNarrations(parseInt(req.query.limit as string) || 50)));
 app.get('/api/narrator/current', (_req, res) => res.json({ narration: narratorService.getCurrentNarration(), timestamp: Date.now() }));
@@ -3100,6 +3197,9 @@ async function gracefulShutdown(signal: string) {
 
   // Stop accepting new connections
   server.close();
+
+  // Stop subprocess decoders
+  decoderManager.stopAll();
 
   // Stop services
   persistenceService.stop();
