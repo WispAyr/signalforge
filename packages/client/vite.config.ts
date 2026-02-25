@@ -8,10 +8,23 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: ['signalforge.skynet', '.skynet'],
     proxy: {
-      '/api': 'http://localhost:3401',
-      '/ws': {
-        target: 'ws://localhost:3401',
+      '/api': {
+        target: 'http://localhost:3401',
+        changeOrigin: true,
+      },
+      '/recordings': {
+        target: 'http://localhost:3401',
+        changeOrigin: true,
+      },
+      '/ws/signal': {
+        target: 'http://localhost:3401',
         ws: true,
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'http://localhost:3401',
+        ws: true,
+        changeOrigin: true,
       },
     },
   },

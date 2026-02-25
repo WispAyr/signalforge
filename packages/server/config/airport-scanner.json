@@ -1,0 +1,36 @@
+{
+  "name": "Prestwick Airport",
+  "icao": "EGPK",
+  "centerFreq": 455662500,
+  "sampleRate": 2048000,
+  "channels": [
+    { "freq": 455700000, "label": "Fire/Rescue", "mode": "NFM", "squelch": 0.01, "color": "#ff4444", "category": "emergency" },
+    { "freq": 455625000, "label": "Ground/Tower Rebroad", "mode": "NFM", "squelch": 0.01, "color": "#44ff44", "category": "atc" },
+    { "freq": 455500000, "label": "Apron Control", "mode": "NFM", "squelch": 0.01, "color": "#44aaff", "category": "ground" },
+    { "freq": 455550000, "label": "Baggage/Handling", "mode": "NFM", "squelch": 0.01, "color": "#4488ff", "category": "handling" },
+    { "freq": 455475000, "label": "Security", "mode": "NFM", "squelch": 0.01, "color": "#ffaa44", "category": "security" },
+    { "freq": 455650000, "label": "Maintenance", "mode": "NFM", "squelch": 0.01, "color": "#aa88ff", "category": "maintenance" },
+    { "freq": 455750000, "label": "Fueling", "mode": "NFM", "squelch": 0.01, "color": "#ff8844", "category": "handling" },
+    { "freq": 455800000, "label": "De-icing", "mode": "NFM", "squelch": 0.01, "color": "#88ccff", "category": "handling" },
+    { "freq": 456025000, "label": "Ops Channel 1", "mode": "NFM", "squelch": 0.01, "color": "#cccccc", "category": "ops" },
+    { "freq": 456075000, "label": "Ops Channel 2", "mode": "NFM", "squelch": 0.01, "color": "#cccccc", "category": "ops" },
+    { "freq": 446006250, "label": "PMR446 Ch1", "mode": "NFM", "squelch": 0.015, "color": "#666688", "category": "pmr" },
+    { "freq": 446018750, "label": "PMR446 Ch2", "mode": "NFM", "squelch": 0.015, "color": "#666688", "category": "pmr" },
+    { "freq": 446031250, "label": "PMR446 Ch3", "mode": "NFM", "squelch": 0.015, "color": "#666688", "category": "pmr" },
+    { "freq": 446043750, "label": "PMR446 Ch4", "mode": "NFM", "squelch": 0.015, "color": "#666688", "category": "pmr" },
+    { "freq": 456175000, "label": "Airport Shuttle", "mode": "NFM", "squelch": 0.01, "color": "#88ff88", "category": "ground" },
+    { "freq": 456225000, "label": "Cargo Ops", "mode": "NFM", "squelch": 0.01, "color": "#4488ff", "category": "handling" }
+  ],
+  "recording": {
+    "enabled": true,
+    "directory": "data/recordings",
+    "maxDurationSec": 120,
+    "preBufferSec": 0.5,
+    "tailSec": 2.0
+  },
+  "discovery": {
+    "enabled": true,
+    "thresholdDb": 10,
+    "minBurstMs": 100
+  }
+}

@@ -2,44 +2,417 @@
   "flows": [
     {
       "id": "pager-decoder",
-      "name": "UK Pager Decoder",
-      "description": "POCSAG/FLEX on 153.350 MHz via SDR Multiplexer",
+      "name": "UK Pager Array",
+      "description": "Multi-frequency POCSAG decoder \u2014 4 virtual receivers from one SDR",
       "locked": true,
       "autoStart": true,
       "category": "decoder",
-      "icon": "📟",
+      "icon": "\ud83d\udcdf",
       "nodes": [
-        { "id": "bg-pager-sdr", "type": "sdr_source", "position": { "x": 80, "y": 200 }, "params": { "freq": 153350000, "rate": 2048000, "label": "RTL-SDR (Multiplexed)" } },
-        { "id": "bg-pager-fft", "type": "fft", "position": { "x": 340, "y": 80 }, "params": { "size": 2048 } },
-        { "id": "bg-pager-wf", "type": "waterfall", "position": { "x": 580, "y": 80 }, "params": {} },
-        { "id": "bg-pager-dc", "type": "downconverter", "position": { "x": 340, "y": 200 }, "params": { "centerFreq": 153350000, "bandwidth": 12500, "outputRate": 22050 } },
-        { "id": "bg-pager-demod", "type": "fm_demod", "position": { "x": 580, "y": 200 }, "params": { "mode": "NFM", "bandwidth": 12500 } },
-        { "id": "bg-pager-dec", "type": "pocsag_decoder", "position": { "x": 820, "y": 200 }, "params": {} }
+        {
+          "id": "bg-pager-sdr",
+          "type": "sdr_source",
+          "position": {
+            "x": 80,
+            "y": 300
+          },
+          "params": {
+            "freq": 153200000,
+            "rate": 2048000,
+            "label": "RTL-SDR @ 153.2 MHz"
+          }
+        },
+        {
+          "id": "bg-pager-fft",
+          "type": "fft",
+          "position": {
+            "x": 300,
+            "y": 640
+          },
+          "params": {
+            "size": 2048
+          }
+        },
+        {
+          "id": "bg-pager-wf",
+          "type": "waterfall",
+          "position": {
+            "x": 520,
+            "y": 640
+          },
+          "params": {}
+        },
+        {
+          "id": "bg-dc-075",
+          "type": "downconverter",
+          "position": {
+            "x": 300,
+            "y": 220
+          },
+          "params": {
+            "centerFreq": 153075000,
+            "bandwidth": 12500,
+            "outputRate": 22050,
+            "label": "153.075"
+          }
+        },
+        {
+          "id": "bg-demod-075",
+          "type": "fm_demod",
+          "position": {
+            "x": 520,
+            "y": 220
+          },
+          "params": {
+            "mode": "NFM",
+            "bandwidth": 12500
+          }
+        },
+        {
+          "id": "bg-dec-075",
+          "type": "pocsag_decoder",
+          "position": {
+            "x": 740,
+            "y": 220
+          },
+          "params": {
+            "label": "153.075 MHz",
+            "freq": 153075000
+          }
+        },
+        {
+          "id": "bg-dc-275",
+          "type": "downconverter",
+          "position": {
+            "x": 300,
+            "y": 360
+          },
+          "params": {
+            "centerFreq": 153275000,
+            "bandwidth": 12500,
+            "outputRate": 22050,
+            "label": "153.275"
+          }
+        },
+        {
+          "id": "bg-demod-275",
+          "type": "fm_demod",
+          "position": {
+            "x": 520,
+            "y": 360
+          },
+          "params": {
+            "mode": "NFM",
+            "bandwidth": 12500
+          }
+        },
+        {
+          "id": "bg-dec-275",
+          "type": "pocsag_decoder",
+          "position": {
+            "x": 740,
+            "y": 360
+          },
+          "params": {
+            "label": "153.275 MHz",
+            "freq": 153275000
+          }
+        },
+        {
+          "id": "bg-dc-350",
+          "type": "downconverter",
+          "position": {
+            "x": 300,
+            "y": 500
+          },
+          "params": {
+            "centerFreq": 153350000,
+            "bandwidth": 12500,
+            "outputRate": 22050,
+            "label": "153.350"
+          }
+        },
+        {
+          "id": "bg-demod-350",
+          "type": "fm_demod",
+          "position": {
+            "x": 520,
+            "y": 500
+          },
+          "params": {
+            "mode": "NFM",
+            "bandwidth": 12500
+          }
+        },
+        {
+          "id": "bg-dec-350",
+          "type": "pocsag_decoder",
+          "position": {
+            "x": 740,
+            "y": 500
+          },
+          "params": {
+            "label": "153.350 MHz",
+            "freq": 153350000
+          }
+        },
+        {
+          "id": "bg-dc-025",
+          "type": "downconverter",
+          "position": {
+            "x": 300,
+            "y": 80
+          },
+          "params": {
+            "centerFreq": 153025000,
+            "bandwidth": 12500,
+            "outputRate": 22050,
+            "label": "153.025"
+          }
+        },
+        {
+          "id": "bg-demod-025",
+          "type": "fm_demod",
+          "position": {
+            "x": 520,
+            "y": 80
+          },
+          "params": {
+            "mode": "NFM",
+            "bandwidth": 12500
+          }
+        },
+        {
+          "id": "bg-dec-025",
+          "type": "pocsag_decoder",
+          "position": {
+            "x": 740,
+            "y": 80
+          },
+          "params": {
+            "label": "153.025 MHz",
+            "freq": 153025000
+          }
+        }
       ],
       "edges": [
-        { "id": "bg-pe1", "from": "bg-pager-sdr", "fromPort": "iq-out-0", "to": "bg-pager-fft", "toPort": "iq-in-0" },
-        { "id": "bg-pe2", "from": "bg-pager-fft", "fromPort": "fft-out-0", "to": "bg-pager-wf", "toPort": "fft-in-0" },
-        { "id": "bg-pe3", "from": "bg-pager-sdr", "fromPort": "iq-out-0", "to": "bg-pager-dc", "toPort": "iq-in-0" },
-        { "id": "bg-pe4", "from": "bg-pager-dc", "fromPort": "iq-out-0", "to": "bg-pager-demod", "toPort": "iq-in-0" },
-        { "id": "bg-pe5", "from": "bg-pager-demod", "fromPort": "audio-out-0", "to": "bg-pager-dec", "toPort": "audio-in-0" }
+        {
+          "id": "bg-pe-fft",
+          "from": "bg-pager-sdr",
+          "fromPort": "iq-out-0",
+          "to": "bg-pager-fft",
+          "toPort": "iq-in-0"
+        },
+        {
+          "id": "bg-pe-wf",
+          "from": "bg-pager-fft",
+          "fromPort": "fft-out-0",
+          "to": "bg-pager-wf",
+          "toPort": "fft-in-0"
+        },
+        {
+          "id": "bg-pe-dc075",
+          "from": "bg-pager-sdr",
+          "fromPort": "iq-out-0",
+          "to": "bg-dc-075",
+          "toPort": "iq-in-0"
+        },
+        {
+          "id": "bg-pe-dm075",
+          "from": "bg-dc-075",
+          "fromPort": "iq-out-0",
+          "to": "bg-demod-075",
+          "toPort": "iq-in-0"
+        },
+        {
+          "id": "bg-pe-dd075",
+          "from": "bg-demod-075",
+          "fromPort": "audio-out-0",
+          "to": "bg-dec-075",
+          "toPort": "audio-in-0"
+        },
+        {
+          "id": "bg-pe-dc275",
+          "from": "bg-pager-sdr",
+          "fromPort": "iq-out-0",
+          "to": "bg-dc-275",
+          "toPort": "iq-in-0"
+        },
+        {
+          "id": "bg-pe-dm275",
+          "from": "bg-dc-275",
+          "fromPort": "iq-out-0",
+          "to": "bg-demod-275",
+          "toPort": "iq-in-0"
+        },
+        {
+          "id": "bg-pe-dd275",
+          "from": "bg-demod-275",
+          "fromPort": "audio-out-0",
+          "to": "bg-dec-275",
+          "toPort": "audio-in-0"
+        },
+        {
+          "id": "bg-pe-dc350",
+          "from": "bg-pager-sdr",
+          "fromPort": "iq-out-0",
+          "to": "bg-dc-350",
+          "toPort": "iq-in-0"
+        },
+        {
+          "id": "bg-pe-dm350",
+          "from": "bg-dc-350",
+          "fromPort": "iq-out-0",
+          "to": "bg-demod-350",
+          "toPort": "iq-in-0"
+        },
+        {
+          "id": "bg-pe-dd350",
+          "from": "bg-demod-350",
+          "fromPort": "audio-out-0",
+          "to": "bg-dec-350",
+          "toPort": "audio-in-0"
+        },
+        {
+          "id": "bg-pe-dc025",
+          "from": "bg-pager-sdr",
+          "fromPort": "iq-out-0",
+          "to": "bg-dc-025",
+          "toPort": "iq-in-0"
+        },
+        {
+          "id": "bg-pe-dm025",
+          "from": "bg-dc-025",
+          "fromPort": "iq-out-0",
+          "to": "bg-demod-025",
+          "toPort": "iq-in-0"
+        },
+        {
+          "id": "bg-pe-dd025",
+          "from": "bg-demod-025",
+          "fromPort": "audio-out-0",
+          "to": "bg-dec-025",
+          "toPort": "audio-in-0"
+        }
       ]
     },
     {
       "id": "ais-receiver",
       "name": "AIS Maritime Receiver",
-      "description": "AIS on 161.975 / 162.025 MHz (future — requires multiplexer retune or second VRx)",
+      "description": "AIS on 161.975 / 162.025 MHz (requires retune or second dongle)",
       "locked": true,
       "autoStart": false,
       "category": "decoder",
-      "icon": "🚢",
+      "icon": "\ud83d\udea2",
       "nodes": [
-        { "id": "bg-ais-sdr", "type": "sdr_source", "position": { "x": 80, "y": 200 }, "params": { "freq": 162000000, "rate": 2048000 } },
-        { "id": "bg-ais-dc", "type": "downconverter", "position": { "x": 340, "y": 200 }, "params": { "centerFreq": 162025000, "bandwidth": 25000, "outputRate": 48000 } },
-        { "id": "bg-ais-dec", "type": "ais_decoder", "position": { "x": 580, "y": 200 }, "params": {} }
+        {
+          "id": "bg-ais-sdr",
+          "type": "sdr_source",
+          "position": {
+            "x": 80,
+            "y": 200
+          },
+          "params": {
+            "freq": 162000000,
+            "rate": 2048000
+          }
+        },
+        {
+          "id": "bg-ais-dc",
+          "type": "downconverter",
+          "position": {
+            "x": 340,
+            "y": 200
+          },
+          "params": {
+            "centerFreq": 162025000,
+            "bandwidth": 25000,
+            "outputRate": 48000
+          }
+        },
+        {
+          "id": "bg-ais-dec",
+          "type": "ais_decoder",
+          "position": {
+            "x": 580,
+            "y": 200
+          },
+          "params": {}
+        }
       ],
       "edges": [
-        { "id": "bg-ae1", "from": "bg-ais-sdr", "fromPort": "iq-out-0", "to": "bg-ais-dc", "toPort": "iq-in-0" },
-        { "id": "bg-ae2", "from": "bg-ais-dc", "fromPort": "iq-out-0", "to": "bg-ais-dec", "toPort": "iq-in-0" }
+        {
+          "id": "bg-ae1",
+          "from": "bg-ais-sdr",
+          "fromPort": "iq-out-0",
+          "to": "bg-ais-dc",
+          "toPort": "iq-in-0"
+        },
+        {
+          "id": "bg-ae2",
+          "from": "bg-ais-dc",
+          "fromPort": "iq-out-0",
+          "to": "bg-ais-dec",
+          "toPort": "iq-in-0"
+        }
+      ]
+    },
+    {
+      "id": "airport-scanner",
+      "name": "Prestwick Airport Scanner",
+      "description": "Multi-channel UHF airport ground ops scanner \u2014 EGPK",
+      "locked": false,
+      "autoStart": false,
+      "category": "scanner",
+      "icon": "\u2708\ufe0f",
+      "nodes": [
+        {
+          "id": "airport-sdr",
+          "type": "sdr_source",
+          "position": {
+            "x": 80,
+            "y": 300
+          },
+          "params": {
+            "freq": 455662500,
+            "rate": 2048000,
+            "label": "RTL-SDR @ 455.66 MHz"
+          }
+        },
+        {
+          "id": "airport-fft",
+          "type": "fft",
+          "position": {
+            "x": 300,
+            "y": 500
+          },
+          "params": {
+            "size": 2048
+          }
+        },
+        {
+          "id": "airport-scanner-node",
+          "type": "airport_scanner",
+          "position": {
+            "x": 300,
+            "y": 300
+          },
+          "params": {
+            "config": "airport-scanner.json"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "airport-sdr",
+          "to": "airport-fft",
+          "port": "iq"
+        },
+        {
+          "from": "airport-sdr",
+          "to": "airport-scanner-node",
+          "port": "iq"
+        }
       ]
     }
   ]

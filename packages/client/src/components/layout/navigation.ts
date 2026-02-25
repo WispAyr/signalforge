@@ -36,6 +36,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: 'waterfall', label: 'Spectrum', icon: '≋', shortcut: '3' },
       { id: 'sdr', label: 'SDR Control', icon: '📡', shortcut: '5' },
       { id: 'scanner', label: 'Scanner', icon: '📻' },
+      { id: 'airport', label: 'Airport', icon: '✈️' },
+      { id: 'uhfscanner', label: 'UHF Scanner', icon: '📡' },
       { id: 'analyzer', label: 'Analyzer', icon: '📊', shortcut: '6' },
       { id: 'audio', label: 'Audio', icon: '🔊' },
       { id: 'dsp', label: 'WebGPU DSP', icon: '⚡' },
