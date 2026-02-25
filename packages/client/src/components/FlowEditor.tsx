@@ -335,8 +335,8 @@ export const FlowEditor: React.FC = () => {
           // Find decoder nodes matching this frequency and pulse their input wires
           for (const node of nodes) {
             if (node.type === 'pocsag_decoder') {
-              const nodeFreq = node.params?.freq ? (node.params.freq / 1e6).toFixed(3) : '';
-              const nodeLabel = node.params?.label || '';
+              const nodeFreq = node.params?.freq ? (Number(node.params.freq) / 1e6).toFixed(3) : '';
+              const nodeLabel = String(node.params?.label || '');
               const match = !freqMHz || nodeLabel.includes(freqMHz) || nodeFreq === freqMHz || nodes.length <= 3;
               if (match) {
                 // Update node data
@@ -1380,7 +1380,7 @@ export const FlowEditor: React.FC = () => {
               const runner = getFlowRunner();
               runner.load(
                 nodes.map(n => ({ id: n.id, type: n.type, params: n.params || {} })),
-                connections.map(c => ({ id: c.id, from: c.from, fromPort: c.fromPort, to: c.to, toPort: c.toPort }))
+                connections.map(c => ({ id: c.id, from: (c as any).from || c.sourceNode, fromPort: (c as any).fromPort || c.sourcePort, to: (c as any).to || c.targetNode, toPort: (c as any).toPort || c.targetPort }))
               );
               runner.start();
               setFlowRunning(true);

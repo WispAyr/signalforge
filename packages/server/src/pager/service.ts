@@ -88,7 +88,7 @@ export class PagerService extends EventEmitter {
   deleteKeywordAlert(id: number) { this.db.deleteAlert(id); }
 
   // New: Frequency discovery
-  getDiscoveredFrequencies() { return this.freqDiscovery.getDiscovered(); }
+  getDiscoveredFrequencies(): any[] { return this.freqDiscovery.getDiscovered(); }
   processFFT(data: any) { this.freqDiscovery.processFFT(data); }
 
   processMessage(data: { protocol: PagerProtocol; capcode: number; address: number; function: number; content: string; baudRate?: number; phase?: string; frequency?: number; channel?: string }) {

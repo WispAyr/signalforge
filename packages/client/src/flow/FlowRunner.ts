@@ -252,7 +252,7 @@ const processors: Record<string, ProcessorFn> = {
     const actx = ctx.audioCtx;
     if (actx.state === "closed") return null;
     const buffer = actx.createBuffer(1, input.length, actx.sampleRate);
-    buffer.copyToChannel(input, 0);
+    buffer.copyToChannel(input as unknown as Float32Array<ArrayBuffer>, 0);
     const src = actx.createBufferSource();
     src.buffer = buffer;
     if (ctx.gainNode) src.connect(ctx.gainNode);

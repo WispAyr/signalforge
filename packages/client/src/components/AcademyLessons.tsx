@@ -232,16 +232,16 @@ function renderInline(text: string): React.ReactNode {
     // Code
     const codeMatch = remaining.match(/`(.+?)`/);
 
-    let firstMatch: { index: number; length: number; node: React.ReactNode } | null = null;
+    type MatchEntry = { index: number; length: number; node: React.ReactNode };
+    const matches: MatchEntry[] = [];
 
     if (boldMatch && boldMatch.index !== undefined) {
-      const candidate = { index: boldMatch.index, length: boldMatch[0].length, node: <strong key={key++}>{boldMatch[1]}</strong> };
-      if (!firstMatch || candidate.index < firstMatch.index) firstMatch = candidate;
+      matches.push({ index: boldMatch.index, length: boldMatch[0].length, node: <strong key={key++}>{boldMatch[1]}</strong> });
     }
     if (codeMatch && codeMatch.index !== undefined) {
-      const candidate = { index: codeMatch.index, length: codeMatch[0].length, node: <code key={key++}>{codeMatch[1]}</code> };
-      if (!firstMatch || candidate.index < firstMatch.index) firstMatch = candidate;
+      matches.push({ index: codeMatch.index, length: codeMatch[0].length, node: <code key={key++}>{codeMatch[1]}</code> });
     }
+    const firstMatch = matches.length > 0 ? matches.reduce((a, b) => a.index < b.index ? a : b) : null;
 
     if (firstMatch) {
       if (firstMatch.index > 0) parts.push(remaining.slice(0, firstMatch.index));

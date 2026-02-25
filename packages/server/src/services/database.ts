@@ -117,6 +117,61 @@ db.exec(`
     recording_id TEXT,
     notes TEXT
   );
+
+  -- Live data persistence tables
+  CREATE TABLE IF NOT EXISTS adsb_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    icao TEXT NOT NULL,
+    callsign TEXT,
+    lat REAL, lon REAL, altitude REAL,
+    speed REAL, heading REAL,
+    squawk TEXT,
+    first_seen INTEGER,
+    last_seen INTEGER,
+    message_count INTEGER DEFAULT 1
+  );
+  CREATE INDEX IF NOT EXISTS idx_adsb_icao ON adsb_log(icao);
+  CREATE INDEX IF NOT EXISTS idx_adsb_time ON adsb_log(last_seen);
+
+  CREATE TABLE IF NOT EXISTS ais_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mmsi TEXT NOT NULL,
+    name TEXT,
+    ship_type TEXT,
+    lat REAL, lon REAL,
+    speed REAL, course REAL,
+    destination TEXT,
+    first_seen INTEGER,
+    last_seen INTEGER,
+    message_count INTEGER DEFAULT 1
+  );
+  CREATE INDEX IF NOT EXISTS idx_ais_mmsi ON ais_log(mmsi);
+  CREATE INDEX IF NOT EXISTS idx_ais_time ON ais_log(last_seen);
+
+  CREATE TABLE IF NOT EXISTS aprs_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    callsign TEXT NOT NULL,
+    lat REAL, lon REAL,
+    symbol TEXT,
+    comment TEXT,
+    path TEXT,
+    first_seen INTEGER,
+    last_seen INTEGER,
+    message_count INTEGER DEFAULT 1
+  );
+  CREATE INDEX IF NOT EXISTS idx_aprs_callsign ON aprs_log(callsign);
+  CREATE INDEX IF NOT EXISTS idx_aprs_time ON aprs_log(last_seen);
+
+  CREATE TABLE IF NOT EXISTS event_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    source TEXT,
+    summary TEXT,
+    data TEXT,
+    created_at INTEGER DEFAULT (strftime('%s', 'now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_event_type ON event_log(event_type);
+  CREATE INDEX IF NOT EXISTS idx_event_time ON event_log(created_at);
 `);
 
 export { db, DATA_DIR, RECORDINGS_DIR };

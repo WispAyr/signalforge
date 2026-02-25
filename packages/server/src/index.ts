@@ -67,6 +67,7 @@ import { AaroniaService } from './services/aaronia.js';
 import { WebSDRService } from './sdr/websdr.js';
 import { TimeMachineService } from './timemachine/service.js';
 import { SettingsService } from './services/settings.js';
+import { PersistenceService } from './persistence/service.js';
 // Rules engine
 import { RulesEngine } from './rules/engine.js';
 import { createRulesRouter } from './rules/api.js';
@@ -214,6 +215,7 @@ const aaroniaService = new AaroniaService();
 const webSDRService = new WebSDRService();
 const timeMachineService = new TimeMachineService();
 const settingsService = new SettingsService();
+const persistenceService = new PersistenceService();
 
 // Rules engine — evaluates all decoder events against user-defined rules
 const rulesEngine = new RulesEngine(
@@ -428,6 +430,11 @@ adsbDecoder.on('message', (msg) => analyticsService.recordDecoderMessage('ADS-B'
 acarsDecoder.on('message', () => analyticsService.recordDecoderMessage('ACARS'));
 aisDecoder.on('message', () => analyticsService.recordDecoderMessage('AIS'));
 aprsDecoder.on('message', () => analyticsService.recordDecoderMessage('APRS'));
+
+// Feed decoder data into persistence (SQLite)
+adsbDecoder.on('message', (msg) => persistenceService.recordADSB(msg));
+aisDecoder.on('message', (msg) => persistenceService.recordAIS(msg));
+aprsDecoder.on('message', (pkt) => persistenceService.recordAPRS(pkt));
 
 // Feed aircraft/vessel positions into geofencing
 adsbDecoder.on('message', (msg) => {
@@ -880,7 +887,7 @@ app.post('/api/sdr/gain', (req, res) => {
   const { connectionId, gain } = req.body;
   if (gain === undefined) return res.status(400).json({ error: 'gain required' });
   // Try multiplexer first (primary SDR path)
-  if (sdrMultiplexer.connected && (sdrMultiplexer as any).client) {
+  if ((sdrMultiplexer as any).connected && (sdrMultiplexer as any).client) {
     (sdrMultiplexer as any).client.setGain(gain);
     return res.json({ ok: true, source: 'multiplexer', gain });
   }
@@ -1824,9 +1831,21 @@ app.get('/api/edge/nodes/:id', (req, res) => {
   res.json(node);
 });
 
-app.post('/api/edge/nodes/:id/command', (req, res) => {
-  const ok = edgeNodeManager.sendCommand(req.params.id, req.body);
-  res.json({ ok });
+app.get('/api/edge/nodes/:id/telemetry', (req, res) => {
+  const node = edgeNodeManager.getNode(req.params.id);
+  if (!node) return res.status(404).json({ error: 'Node not found' });
+  const limit = parseInt(req.query.limit as string) || 60;
+  res.json(edgeNodeManager.getNodeTelemetry(req.params.id, limit));
+});
+
+app.post('/api/edge/nodes/:id/command', async (req, res) => {
+  if (req.query.async === 'true') {
+    const result = await edgeNodeManager.sendCommandAsync(req.params.id, req.body);
+    res.json(result);
+  } else {
+    const ok = edgeNodeManager.sendCommand(req.params.id, req.body);
+    res.json({ ok });
+  }
 });
 
 app.delete('/api/edge/nodes/:id', (req, res) => {
@@ -2701,6 +2720,34 @@ app.get('/api/history/config', (_req, res) => res.json(historyService.getConfig(
 app.post('/api/history/config', (req, res) => res.json(historyService.updateConfig(req.body)));
 
 // ============================================================================
+// REST API — Persistent History (SQLite-backed)
+// ============================================================================
+app.get('/api/history/adsb', (req, res) => {
+  const since = parseInt(req.query.since as string) || 0;
+  const limit = parseInt(req.query.limit as string) || 100;
+  res.json(persistenceService.getADSBHistory(since, limit));
+});
+app.get('/api/history/ais', (req, res) => {
+  const since = parseInt(req.query.since as string) || 0;
+  const limit = parseInt(req.query.limit as string) || 100;
+  res.json(persistenceService.getAISHistory(since, limit));
+});
+app.get('/api/history/aprs', (req, res) => {
+  const since = parseInt(req.query.since as string) || 0;
+  const limit = parseInt(req.query.limit as string) || 100;
+  res.json(persistenceService.getAPRSHistory(since, limit));
+});
+app.get('/api/history/events', (req, res) => {
+  const type = req.query.type as string | undefined;
+  const since = parseInt(req.query.since as string) || 0;
+  const limit = parseInt(req.query.limit as string) || 100;
+  res.json(persistenceService.getEvents(type, since, limit));
+});
+app.get('/api/stats', (_req, res) => {
+  res.json(persistenceService.getStats());
+});
+
+// ============================================================================
 // REST API — Phase 8: Integration Hub
 // ============================================================================
 app.get('/api/integrations', (_req, res) => res.json(integrationHubService.getAll()));
@@ -2912,6 +2959,10 @@ wss.on('connection', (ws: WebSocket, req) => {
           edgeNodeManager.registerNode(edgeNodeId, msg.info, ws);
         } else if (msg.type === 'edge_heartbeat') {
           edgeNodeManager.handleHeartbeat(msg.heartbeat);
+        } else if (msg.type === 'edge_telemetry') {
+          edgeNodeManager.handleTelemetry(msg.telemetry);
+        } else if (msg.type === 'edge_command_result') {
+          edgeNodeManager.handleCommandResult({ commandId: msg.commandId, success: msg.success, result: msg.result });
         } else if (msg.type === 'edge_iq_data') {
           // Forward IQ data from edge to all clients
           broadcast({ type: 'edge_iq_meta', nodeId: edgeNodeId, ...msg.meta });
@@ -3051,6 +3102,7 @@ async function gracefulShutdown(signal: string) {
   server.close();
 
   // Stop services
+  persistenceService.stop();
   geofenceService.stop();
   propagationService.stop();
   voiceDecoder.stopDemo();

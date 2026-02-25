@@ -604,7 +604,7 @@ export function UHFScannerView() {
         case ' ':
           e.preventDefault();
           if (status?.state === 'IDLE') startScanner();
-          else if (status?.state !== 'IDLE') stopScanner();
+          else stopScanner();
           break;
         case 'l': case 'L':
           if (status?.state === 'PARKED') lockoutCurrent();
