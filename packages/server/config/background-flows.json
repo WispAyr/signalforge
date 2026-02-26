@@ -414,6 +414,165 @@
           "port": "iq"
         }
       ]
+    },
+    {
+      "id": "fire-scanner",
+      "name": "Scottish Fire & Rescue Scanner",
+      "description": "6-channel UHF fireground scanner — FG1-4 + BA1-2 (461 MHz band)",
+      "locked": false,
+      "autoStart": false,
+      "category": "scanner",
+      "icon": "🔥",
+      "nodes": [
+        {
+          "id": "fire-sdr",
+          "type": "sdr_source",
+          "position": { "x": 80, "y": 300 },
+          "params": { "freq": 461300000, "rate": 2048000, "gain": 49.6, "label": "RTL-SDR @ 461.3 MHz" }
+        },
+        {
+          "id": "fire-fft",
+          "type": "fft",
+          "position": { "x": 300, "y": 640 },
+          "params": { "size": 2048 }
+        },
+        {
+          "id": "fire-wf",
+          "type": "waterfall",
+          "position": { "x": 520, "y": 640 },
+          "params": {}
+        },
+        {
+          "id": "fire-dc-fg1",
+          "type": "downconverter",
+          "position": { "x": 300, "y": 80 },
+          "params": { "centerFreq": 461012500, "bandwidth": 12500, "outputRate": 22050, "label": "FG1 - 461.0125" }
+        },
+        {
+          "id": "fire-demod-fg1",
+          "type": "fm_demod",
+          "position": { "x": 520, "y": 80 },
+          "params": { "mode": "NFM", "bandwidth": 12500 }
+        },
+        {
+          "id": "fire-audio-fg1",
+          "type": "audio_output",
+          "position": { "x": 740, "y": 80 },
+          "params": { "label": "FG1 - Fireground 1", "freq": 461012500 }
+        },
+        {
+          "id": "fire-dc-fg2",
+          "type": "downconverter",
+          "position": { "x": 300, "y": 180 },
+          "params": { "centerFreq": 461112500, "bandwidth": 12500, "outputRate": 22050, "label": "FG2 - 461.1125" }
+        },
+        {
+          "id": "fire-demod-fg2",
+          "type": "fm_demod",
+          "position": { "x": 520, "y": 180 },
+          "params": { "mode": "NFM", "bandwidth": 12500 }
+        },
+        {
+          "id": "fire-audio-fg2",
+          "type": "audio_output",
+          "position": { "x": 740, "y": 180 },
+          "params": { "label": "FG2 - Fireground 2", "freq": 461112500 }
+        },
+        {
+          "id": "fire-dc-fg3",
+          "type": "downconverter",
+          "position": { "x": 300, "y": 280 },
+          "params": { "centerFreq": 461487500, "bandwidth": 12500, "outputRate": 22050, "label": "FG3 - 461.4875" }
+        },
+        {
+          "id": "fire-demod-fg3",
+          "type": "fm_demod",
+          "position": { "x": 520, "y": 280 },
+          "params": { "mode": "NFM", "bandwidth": 12500 }
+        },
+        {
+          "id": "fire-audio-fg3",
+          "type": "audio_output",
+          "position": { "x": 740, "y": 280 },
+          "params": { "label": "FG3 - Fireground 3", "freq": 461487500 }
+        },
+        {
+          "id": "fire-dc-fg4",
+          "type": "downconverter",
+          "position": { "x": 300, "y": 380 },
+          "params": { "centerFreq": 461562500, "bandwidth": 12500, "outputRate": 22050, "label": "FG4 - 461.5625" }
+        },
+        {
+          "id": "fire-demod-fg4",
+          "type": "fm_demod",
+          "position": { "x": 520, "y": 380 },
+          "params": { "mode": "NFM", "bandwidth": 12500 }
+        },
+        {
+          "id": "fire-audio-fg4",
+          "type": "audio_output",
+          "position": { "x": 740, "y": 380 },
+          "params": { "label": "FG4 - Fireground 4", "freq": 461562500 }
+        },
+        {
+          "id": "fire-dc-ba1",
+          "type": "downconverter",
+          "position": { "x": 300, "y": 480 },
+          "params": { "centerFreq": 461612500, "bandwidth": 12500, "outputRate": 22050, "label": "BA1 - 461.6125" }
+        },
+        {
+          "id": "fire-demod-ba1",
+          "type": "fm_demod",
+          "position": { "x": 520, "y": 480 },
+          "params": { "mode": "NFM", "bandwidth": 12500 }
+        },
+        {
+          "id": "fire-audio-ba1",
+          "type": "audio_output",
+          "position": { "x": 740, "y": 480 },
+          "params": { "label": "BA1 - BA Channel 1", "freq": 461612500 }
+        },
+        {
+          "id": "fire-dc-ba2",
+          "type": "downconverter",
+          "position": { "x": 300, "y": 560 },
+          "params": { "centerFreq": 461637500, "bandwidth": 12500, "outputRate": 22050, "label": "BA2 - 461.6375" }
+        },
+        {
+          "id": "fire-demod-ba2",
+          "type": "fm_demod",
+          "position": { "x": 520, "y": 560 },
+          "params": { "mode": "NFM", "bandwidth": 12500 }
+        },
+        {
+          "id": "fire-audio-ba2",
+          "type": "audio_output",
+          "position": { "x": 740, "y": 560 },
+          "params": { "label": "BA2 - BA Channel 2", "freq": 461637500 }
+        }
+      ],
+      "edges": [
+        { "id": "fire-e-fft", "from": "fire-sdr", "fromPort": "iq-out-0", "to": "fire-fft", "toPort": "iq-in-0" },
+        { "id": "fire-e-wf", "from": "fire-fft", "fromPort": "fft-out-0", "to": "fire-wf", "toPort": "fft-in-0" },
+        { "id": "fire-e-dc-fg1", "from": "fire-sdr", "fromPort": "iq-out-0", "to": "fire-dc-fg1", "toPort": "iq-in-0" },
+        { "id": "fire-e-dm-fg1", "from": "fire-dc-fg1", "fromPort": "iq-out-0", "to": "fire-demod-fg1", "toPort": "iq-in-0" },
+        { "id": "fire-e-ao-fg1", "from": "fire-demod-fg1", "fromPort": "audio-out-0", "to": "fire-audio-fg1", "toPort": "audio-in-0" },
+        { "id": "fire-e-dc-fg2", "from": "fire-sdr", "fromPort": "iq-out-0", "to": "fire-dc-fg2", "toPort": "iq-in-0" },
+        { "id": "fire-e-dm-fg2", "from": "fire-dc-fg2", "fromPort": "iq-out-0", "to": "fire-demod-fg2", "toPort": "iq-in-0" },
+        { "id": "fire-e-ao-fg2", "from": "fire-demod-fg2", "fromPort": "audio-out-0", "to": "fire-audio-fg2", "toPort": "audio-in-0" },
+        { "id": "fire-e-dc-fg3", "from": "fire-sdr", "fromPort": "iq-out-0", "to": "fire-dc-fg3", "toPort": "iq-in-0" },
+        { "id": "fire-e-dm-fg3", "from": "fire-dc-fg3", "fromPort": "iq-out-0", "to": "fire-demod-fg3", "toPort": "iq-in-0" },
+        { "id": "fire-e-ao-fg3", "from": "fire-demod-fg3", "fromPort": "audio-out-0", "to": "fire-audio-fg3", "toPort": "audio-in-0" },
+        { "id": "fire-e-dc-fg4", "from": "fire-sdr", "fromPort": "iq-out-0", "to": "fire-dc-fg4", "toPort": "iq-in-0" },
+        { "id": "fire-e-dm-fg4", "from": "fire-dc-fg4", "fromPort": "iq-out-0", "to": "fire-demod-fg4", "toPort": "iq-in-0" },
+        { "id": "fire-e-ao-fg4", "from": "fire-demod-fg4", "fromPort": "audio-out-0", "to": "fire-audio-fg4", "toPort": "audio-in-0" },
+        { "id": "fire-e-dc-ba1", "from": "fire-sdr", "fromPort": "iq-out-0", "to": "fire-dc-ba1", "toPort": "iq-in-0" },
+        { "id": "fire-e-dm-ba1", "from": "fire-dc-ba1", "fromPort": "iq-out-0", "to": "fire-demod-ba1", "toPort": "iq-in-0" },
+        { "id": "fire-e-ao-ba1", "from": "fire-demod-ba1", "fromPort": "audio-out-0", "to": "fire-audio-ba1", "toPort": "audio-in-0" },
+        { "id": "fire-e-dc-ba2", "from": "fire-sdr", "fromPort": "iq-out-0", "to": "fire-dc-ba2", "toPort": "iq-in-0" },
+        { "id": "fire-e-dm-ba2", "from": "fire-dc-ba2", "fromPort": "iq-out-0", "to": "fire-demod-ba2", "toPort": "iq-in-0" },
+        { "id": "fire-e-ao-ba2", "from": "fire-demod-ba2", "fromPort": "audio-out-0", "to": "fire-audio-ba2", "toPort": "audio-in-0" }
+      ]
     }
   ]
 }

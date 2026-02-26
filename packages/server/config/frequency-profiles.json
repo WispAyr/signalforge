@@ -18,7 +18,7 @@
       "name": "Scottish Fire & Rescue",
       "centerFreq": 461300000,
       "sampleRate": 2048000,
-      "gain": 40,
+      "gain": 49.6,
       "receivers": [
         { "freq": 461012500, "mode": "NFM", "bw": 12500, "label": "FG1 - Fireground 1" },
         { "freq": 461112500, "mode": "NFM", "bw": 12500, "label": "FG2 - Fireground 2" },
