@@ -1067,6 +1067,180 @@ app.post('/api/sdr/multiplexer/reconnect', async (_req, res) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Retune API ──────────────────────────────────────────────────────────────
+app.post('/api/sdr/multiplexer/tune', async (req, res) => {
+  const { centerFreq, sampleRate, gain } = req.body;
+  if (!centerFreq || typeof centerFreq !== 'number') {
+    return res.status(400).json({ error: 'centerFreq (number) is required' });
+  }
+  try {
+    const ok = await sdrMultiplexer.retune(centerFreq, sampleRate || 2048000, gain || 40);
+    res.json({ ok, centerFreq, sampleRate: sampleRate || 2048000, gain: gain || 40, status: sdrMultiplexer.getStatus() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Frequency Profiles ──────────────────────────────────────────────────────
+import { loadProfiles, saveCustomProfile, deleteCustomProfile, getActiveProfileId, setActiveProfileId, getPreviousProfileId } from './sdr/profiles.js';
+import { audioStreamer } from './sdr/audio-streamer.js';
+
+app.get('/api/sdr/profiles', (_req, res) => {
+  const config = loadProfiles();
+  const profiles = Object.entries(config.profiles).map(([id, p]) => ({
+    id, name: p.name, centerFreq: p.centerFreq, receiverCount: p.receivers.length, builtIn: p.builtIn !== false,
+  }));
+  res.json({ profiles, activeProfileId: getActiveProfileId() });
+});
+
+app.get('/api/sdr/profiles/active', (_req, res) => {
+  res.json({ profileId: getActiveProfileId() });
+});
+
+app.get('/api/sdr/profiles/:id', (req, res) => {
+  const config = loadProfiles();
+  const profile = config.profiles[req.params.id];
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+  res.json({ id: req.params.id, ...profile });
+});
+
+app.post('/api/sdr/profiles/:id/activate', async (req, res) => {
+  const config = loadProfiles();
+  const profile = config.profiles[req.params.id];
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+  try {
+    // Pause any active background flow
+    for (const flow of backgroundFlows) {
+      if (flow.locked && !flow.paused) {
+        flow.paused = true;
+        console.log(`⏸️ Auto-paused flow: ${flow.name}`);
+      }
+    }
+
+    // Retune SDR
+    const ok = await sdrMultiplexer.retune(profile.centerFreq, profile.sampleRate, profile.gain);
+    if (!ok) return res.status(500).json({ error: 'Failed to retune SDR' });
+
+    // Create receivers
+    const receiverIds: string[] = [];
+    for (const rx of profile.receivers) {
+      const result = sdrMultiplexer.addReceiver({
+        centerFreq: rx.freq,
+        bandwidth: rx.bw,
+        outputRate: 22050,
+        mode: rx.mode as any,
+        decoder: (rx.decoder || 'none') as 'multimon-ng' | 'none',
+        label: rx.label,
+      });
+      if (result) receiverIds.push(result.id);
+    }
+
+    // Start audio streams for each receiver
+    const streamUrls: Record<string, string> = {};
+    for (const rxId of receiverIds) {
+      const rxStatus = sdrMultiplexer.getStatus().receivers.find(r => r.id === rxId);
+      if (rxStatus) {
+        audioStreamer.startStream(rxId, rxStatus.label, rxStatus.centerFreq, rxStatus.mode);
+        streamUrls[rxId] = `/api/sdr/receiver/${rxId}/audio`;
+      }
+    }
+
+    setActiveProfileId(req.params.id);
+    res.json({
+      ok: true,
+      profileId: req.params.id,
+      profileName: profile.name,
+      receivers: receiverIds.length,
+      receiverIds,
+      streamUrls,
+      listenUrls: receiverIds.reduce((acc, id) => ({ ...acc, [id]: `/api/sdr/listen/${id}` }), {}),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/sdr/profiles/deactivate', async (_req, res) => {
+  try {
+    // Stop all audio streams
+    audioStreamer.stopAll();
+
+    // Remove all receivers
+    const status = sdrMultiplexer.getStatus();
+    for (const rx of status.receivers) {
+      sdrMultiplexer.removeReceiver(rx.id);
+    }
+
+    setActiveProfileId(null);
+
+    // Resume paused background flows
+    for (const flow of backgroundFlows) {
+      if (flow.paused) {
+        flow.paused = false;
+        console.log(`▶️ Auto-resumed flow: ${flow.name}`);
+      }
+    }
+
+    // Re-run autoStart to restore pager config
+    await sdrMultiplexer.autoStart();
+
+    res.json({ ok: true, message: 'Profile deactivated, background flows resumed' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/sdr/profiles', (req, res) => {
+  const { id, name, centerFreq, sampleRate, gain, receivers } = req.body;
+  if (!id || !name || !centerFreq || !receivers) {
+    return res.status(400).json({ error: 'id, name, centerFreq, receivers required' });
+  }
+  saveCustomProfile(id, { name, centerFreq, sampleRate: sampleRate || 2048000, gain: gain || 40, receivers });
+  res.json({ ok: true, id });
+});
+
+app.delete('/api/sdr/profiles/:id', (req, res) => {
+  const config = loadProfiles();
+  const profile = config.profiles[req.params.id];
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+  if (profile.builtIn !== false) return res.status(400).json({ error: 'Cannot delete built-in profile' });
+  deleteCustomProfile(req.params.id);
+  res.json({ ok: true });
+});
+
+// ─── Audio Streaming ─────────────────────────────────────────────────────────
+app.get('/api/sdr/receiver/:id/audio', (req, res) => {
+  const rxId = req.params.id;
+  const ok = audioStreamer.addClient(rxId, res);
+  if (!ok) {
+    // Auto-create stream if receiver exists
+    const status = sdrMultiplexer.getStatus();
+    const rx = status.receivers.find(r => r.id === rxId);
+    if (rx) {
+      audioStreamer.startStream(rxId, rx.label, rx.centerFreq, rx.mode);
+      audioStreamer.addClient(rxId, res);
+    } else {
+      res.status(404).json({ error: 'Receiver not found' });
+    }
+  }
+});
+
+app.get('/api/sdr/receiver/:id/audio/info', (req, res) => {
+  const info = audioStreamer.getStreamInfo(req.params.id);
+  if (!info) return res.status(404).json({ error: 'Stream not found' });
+  res.json(info);
+});
+
+app.get('/api/sdr/listen/:id', (req, res) => {
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  res.type('html').send(audioStreamer.getPlayerHTML(req.params.id, baseUrl));
+});
+
+app.get('/api/sdr/streams', (_req, res) => {
+  res.json({ streams: audioStreamer.getAllStreams(), ffmpegAvailable: audioStreamer.isAvailable() });
+});
+
 app.get('/api/sdr/mux-devices', (_req, res2) => {
   const detection = sdrMultiplexer.detectDevice();
   const muxStatus = sdrMultiplexer.getStatus();
@@ -1581,6 +1755,7 @@ interface BackgroundFlow {
   nodes: unknown[];
   edges: unknown[];
   status?: 'running' | 'stopped' | 'error';
+  paused?: boolean;
 }
 
 let backgroundFlows: BackgroundFlow[] = [];
@@ -1630,6 +1805,35 @@ app.post('/api/background-flows/:id/lock', (req, res) => {
     writeFileSync(BG_FLOWS_PATH, JSON.stringify({ flows: backgroundFlows }, null, 2));
   } catch {}
   res.json({ ok: true, locked: flow.locked });
+});
+
+app.post('/api/background-flows/:id/pause', async (req, res) => {
+  const flow = backgroundFlows.find(f => f.id === req.params.id);
+  if (!flow) return res.status(404).json({ error: 'Not found' });
+  if (flow.paused) return res.json({ ok: true, message: 'Already paused' });
+
+  // Remove all receivers but remember the flow config
+  const status = sdrMultiplexer.getStatus();
+  for (const rx of status.receivers) {
+    sdrMultiplexer.removeReceiver(rx.id);
+  }
+  flow.paused = true;
+  flow.status = 'stopped';
+  console.log(`⏸️ Paused background flow: ${flow.name}`);
+  res.json({ ok: true, flowId: flow.id, paused: true });
+});
+
+app.post('/api/background-flows/:id/resume', async (req, res) => {
+  const flow = backgroundFlows.find(f => f.id === req.params.id);
+  if (!flow) return res.status(404).json({ error: 'Not found' });
+  if (!flow.paused) return res.json({ ok: true, message: 'Not paused' });
+
+  flow.paused = false;
+  // Re-run autoStart to restore the flow's receivers
+  const ok = await sdrMultiplexer.autoStart();
+  flow.status = ok ? 'running' : 'error';
+  console.log(`▶️ Resumed background flow: ${flow.name} (${flow.status})`);
+  res.json({ ok, flowId: flow.id, status: flow.status });
 });
 
 app.put('/api/background-flows/:id', (req, res) => {
@@ -3374,10 +3578,21 @@ pagerService.on('keyword_alert', (alert) => {
   broadcast({ type: 'pager_alert', alert });
 });
 
+// Wire audio streamer to receive PCM from multiplexer's virtual receivers
+sdrMultiplexer.on('receiver_audio', (rxId: string, audio: Float32Array) => {
+  // Convert Float32 [-1.0, 1.0] to s16le Buffer
+  const buf = Buffer.alloc(audio.length * 2);
+  for (let i = 0; i < audio.length; i++) {
+    const s = Math.max(-1, Math.min(1, audio[i]));
+    buf.writeInt16LE(Math.round(s * 32767), i * 2);
+  }
+  audioStreamer.feedAudio(rxId, buf);
+});
+
 // Auto-start multiplexer with multi-frequency pager array
 setTimeout(() => {
   sdrMultiplexer.autoStart().then(ok => {
-    if (ok) console.log("📡 SDR Multiplexer auto-started — 3 pager receivers active");
+    if (ok) console.log("📡 SDR Multiplexer auto-started — pager receivers active");
     else console.log("📡 SDR Multiplexer: no device or auto-start failed");
   }).catch(err => console.error("📡 SDR Multiplexer auto-start error:", err));
 }, 3000); // Delay to let server bind first

@@ -458,12 +458,17 @@ export class SDRMultiplexer extends EventEmitter {
   }
 
   /** Start rtl_tcp as a child process */
-  startRtlTcp(port = 1235): Promise<void> {
+  startRtlTcp(port = 1235, centerFreq?: number, sampleRate?: number, gain?: number): Promise<void> {
     return new Promise((resolve, reject) => {
       if (this.rtlTcpProcess) { resolve(); return; }
       
       try {
-        this.rtlTcpProcess = spawn('/opt/homebrew/bin/rtl_tcp', ['-p', String(port)], {
+        const args = ['-p', String(port)];
+        if (centerFreq !== undefined) args.push('-f', String(centerFreq));
+        if (sampleRate !== undefined) args.push('-s', String(sampleRate));
+        if (gain !== undefined) args.push('-g', String(gain));
+        
+        this.rtlTcpProcess = spawn('/opt/homebrew/bin/rtl_tcp', args, {
           stdio: ['ignore', 'pipe', 'pipe'],
           detached: true,
         });
@@ -639,6 +644,11 @@ export class SDRMultiplexer extends EventEmitter {
       });
     }
 
+    // Hook audio streamer — convert Float32 audio to s16le PCM Buffer
+    rx.on('audio', (audio: Float32Array) => {
+      this.emit('receiver_audio', rx.id, audio);
+    });
+
     console.log(`📡 Virtual receiver added: ${rx.getStatus().label} (${rx.id})`);
     this.emit('receiver_added', rx.getStatus());
     return rx;
@@ -751,6 +761,47 @@ export class SDRMultiplexer extends EventEmitter {
       return true;
     } catch (err: any) {
       console.error(`📡 Auto-start failed: ${err.message}`);
+      return false;
+    }
+  }
+
+  /** Retune the entire multiplexer (kill rtl_tcp, restart with new center frequency) */
+  async retune(centerFreq: number, sampleRate: number = 2048000, gain: number = 40): Promise<boolean> {
+    console.log(`📡 Retuning multiplexer to centerFreq=${centerFreq}, sampleRate=${sampleRate}, gain=${gain}`);
+    
+    // Clear all existing receivers (offsets will be wrong)
+    const receiverIds = Array.from(this.receivers.keys());
+    for (const id of receiverIds) {
+      this.removeReceiver(id);
+    }
+
+    // Disconnect and kill rtl_tcp
+    if (this.client) {
+      this.client.disconnect();
+      this.client = null;
+    }
+    if (this.rtlTcpProcess) {
+      this.rtlTcpProcess.kill('SIGTERM');
+      this.rtlTcpProcess = null;
+    }
+    this.connected = false;
+
+    // Kill any other rtl_tcp instances
+    try { require('child_process').execSync('pkill -9 -f rtl_tcp 2>/dev/null || true'); } catch {}
+
+    // Wait for cleanup
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Start new rtl_tcp with updated parameters
+    try {
+      this.centerFreq = centerFreq;
+      this.sampleRate = sampleRate;
+      await this.startRtlTcp(1235, centerFreq, sampleRate, gain);
+      await new Promise(r => setTimeout(r, 3000));
+      const connected = await this.connect("127.0.0.1", 1235);
+      return connected;
+    } catch (err: any) {
+      console.error(`📡 Retune failed: ${err.message}`);
       return false;
     }
   }

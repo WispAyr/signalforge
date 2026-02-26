@@ -1,0 +1,70 @@
+{
+  "profiles": {
+    "uk-pager": {
+      "name": "UK Pager Network",
+      "centerFreq": 153200000,
+      "sampleRate": 2048000,
+      "gain": 40,
+      "receivers": [
+        { "freq": 153025000, "mode": "NFM", "bw": 12500, "label": "Pager 153.025 MHz", "decoder": "multimon-ng" },
+        { "freq": 153075000, "mode": "NFM", "bw": 12500, "label": "Pager 153.075 MHz", "decoder": "multimon-ng" },
+        { "freq": 153275000, "mode": "NFM", "bw": 12500, "label": "Pager 153.275 MHz", "decoder": "multimon-ng" },
+        { "freq": 153350000, "mode": "NFM", "bw": 12500, "label": "Pager 153.350 MHz", "decoder": "multimon-ng" },
+        { "freq": 153375000, "mode": "NFM", "bw": 12500, "label": "Pager 153.375 MHz", "decoder": "multimon-ng" },
+        { "freq": 153425000, "mode": "NFM", "bw": 12500, "label": "Pager 153.425 MHz", "decoder": "multimon-ng" }
+      ]
+    },
+    "uk-fire": {
+      "name": "Scottish Fire & Rescue",
+      "centerFreq": 461300000,
+      "sampleRate": 2048000,
+      "gain": 40,
+      "receivers": [
+        { "freq": 461012500, "mode": "NFM", "bw": 12500, "label": "FG1 - Fireground 1" },
+        { "freq": 461112500, "mode": "NFM", "bw": 12500, "label": "FG2 - Fireground 2" },
+        { "freq": 461487500, "mode": "NFM", "bw": 12500, "label": "FG3 - Fireground 3" },
+        { "freq": 461562500, "mode": "NFM", "bw": 12500, "label": "FG4 - Fireground 4" },
+        { "freq": 461612500, "mode": "NFM", "bw": 12500, "label": "FG5 - BA Channel 1" },
+        { "freq": 461637500, "mode": "NFM", "bw": 12500, "label": "FG6 - BA Channel 2" }
+      ]
+    },
+    "uk-marine": {
+      "name": "Marine VHF",
+      "centerFreq": 156800000,
+      "sampleRate": 2048000,
+      "gain": 40,
+      "receivers": [
+        { "freq": 156800000, "mode": "NFM", "bw": 25000, "label": "Ch16 - Distress" },
+        { "freq": 156650000, "mode": "NFM", "bw": 25000, "label": "Ch13 - Bridge-Bridge" },
+        { "freq": 156300000, "mode": "NFM", "bw": 25000, "label": "Ch06 - Safety" }
+      ]
+    },
+    "airband": {
+      "name": "Aviation VHF",
+      "centerFreq": 124000000,
+      "sampleRate": 2048000,
+      "gain": 40,
+      "receivers": [
+        { "freq": 121500000, "mode": "AM", "bw": 25000, "label": "Guard - Emergency" },
+        { "freq": 124350000, "mode": "AM", "bw": 25000, "label": "Scottish Control" },
+        { "freq": 123100000, "mode": "AM", "bw": 25000, "label": "Search & Rescue" }
+      ]
+    },
+    "pmr446": {
+      "name": "PMR446 (Walkie-Talkies)",
+      "centerFreq": 446100000,
+      "sampleRate": 2048000,
+      "gain": 40,
+      "receivers": [
+        { "freq": 446006250, "mode": "NFM", "bw": 12500, "label": "PMR Ch1" },
+        { "freq": 446018750, "mode": "NFM", "bw": 12500, "label": "PMR Ch2" },
+        { "freq": 446031250, "mode": "NFM", "bw": 12500, "label": "PMR Ch3" },
+        { "freq": 446043750, "mode": "NFM", "bw": 12500, "label": "PMR Ch4" },
+        { "freq": 446056250, "mode": "NFM", "bw": 12500, "label": "PMR Ch5" },
+        { "freq": 446068750, "mode": "NFM", "bw": 12500, "label": "PMR Ch6" },
+        { "freq": 446081250, "mode": "NFM", "bw": 12500, "label": "PMR Ch7" },
+        { "freq": 446093750, "mode": "NFM", "bw": 12500, "label": "PMR Ch8" }
+      ]
+    }
+  }
+}
