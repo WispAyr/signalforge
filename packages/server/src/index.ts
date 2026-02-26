@@ -101,9 +101,9 @@ app.use(express.json({ limit: '10mb' }));
 // Rate limiting
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW = 60000;
-const RATE_LIMIT_MAX = 200;
+const RATE_LIMIT_MAX = 2000;
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/health') || req.path.startsWith('/api/docs')) return next();
+  if (req.path.startsWith('/api/health') || req.path.startsWith('/api/docs') || req.path.startsWith('/assets') || req.headers.upgrade === 'websocket') return next();
   const ip = req.ip || 'unknown';
   const entry = rateLimitMap.get(ip);
   const now = Date.now();
