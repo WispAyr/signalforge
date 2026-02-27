@@ -60,10 +60,12 @@ export class NarratorService extends EventEmitter {
   // LLM providers
   private ollamaAvailable: boolean | null = null;
   private anthropicAvailable: boolean | null = null;
+  private lfm25Available: boolean | null = null;
   private readonly ollamaUrl = 'http://localhost:11434/api/generate';
   private readonly ollamaModel = 'llama3.1:8b';
   private readonly anthropicUrl = 'https://api.anthropic.com/v1/messages';
-  private activeProvider: 'ollama' | 'anthropic' | 'template' = 'template';
+  private readonly lfm25Url = process.env.LFM25_URL || 'http://localhost:8080/v1/chat/completions';
+  private activeProvider: 'ollama' | 'anthropic' | 'lfm25' | 'template' = 'template';
 
   private readonly knownBands: Array<{ startHz: number; endHz: number; name: string; usage: string }> = [
     { startHz: 87500000, endHz: 108000000, name: 'FM Broadcast', usage: 'Commercial FM radio stations' },
@@ -92,6 +94,23 @@ export class NarratorService extends EventEmitter {
 
   private async checkProviders(): Promise<void> {
     // Check Ollama
+    // Check LFM2.5 (OpenAI-compatible API on :8080)
+    try {
+      const lfmRes = await fetch(
+        (process.env.LFM25_URL || 'http://localhost:8080').replace('/v1/chat/completions', '') + '/v1/models',
+        { signal: AbortSignal.timeout(3000) }
+      );
+      if (lfmRes.ok) {
+        this.lfm25Available = true;
+        this.activeProvider = 'lfm25';
+        console.log('🤖 Narrator: LFM2.5 available (preferred provider)');
+      } else {
+        this.lfm25Available = false;
+      }
+    } catch {
+      this.lfm25Available = false;
+    }
+
     try {
       const res = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) });
       if (res.ok) {
@@ -100,12 +119,11 @@ export class NarratorService extends EventEmitter {
         const hasModel = data.models?.some((m: any) => m.name?.includes('llama3'));
         this.ollamaAvailable = res.ok; // Available even without model — can use whatever's there
         if (hasModel) {
-          this.activeProvider = 'ollama';
-          console.log('🤖 Narrator: Ollama available (preferred provider)');
+          if (!this.lfm25Available) this.activeProvider = 'ollama';
+          console.log('🤖 Narrator: Ollama available');
         } else if (data.models?.length > 0) {
-          // Use first available model
           (this as any)._ollamaModel = data.models[0].name;
-          this.activeProvider = 'ollama';
+          if (!this.lfm25Available) this.activeProvider = 'ollama';
           console.log(`🤖 Narrator: Ollama available, using model: ${data.models[0].name}`);
         } else {
           this.ollamaAvailable = false;
@@ -119,7 +137,7 @@ export class NarratorService extends EventEmitter {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (apiKey && apiKey.length > 10) {
       this.anthropicAvailable = true;
-      if (!this.ollamaAvailable) {
+      if (!this.lfm25Available && !this.ollamaAvailable) {
         this.activeProvider = 'anthropic';
         console.log('🤖 Narrator: Anthropic API available (fallback provider)');
       }
@@ -127,7 +145,7 @@ export class NarratorService extends EventEmitter {
       this.anthropicAvailable = false;
     }
 
-    if (!this.ollamaAvailable && !this.anthropicAvailable) {
+    if (!this.lfm25Available && !this.ollamaAvailable && !this.anthropicAvailable) {
       this.activeProvider = 'template';
       console.log('🤖 Narrator: No LLM available, using template fallback');
     }
@@ -165,7 +183,9 @@ export class NarratorService extends EventEmitter {
     let text: string;
 
     try {
-      if (this.activeProvider === 'ollama') {
+      if (this.activeProvider === 'lfm25') {
+        text = await this.generateWithLFM25();
+      } else if (this.activeProvider === 'ollama') {
         text = await this.generateWithOllama();
       } else if (this.activeProvider === 'anthropic') {
         text = await this.generateWithAnthropic();
@@ -173,9 +193,11 @@ export class NarratorService extends EventEmitter {
         text = this.generateFromTemplates();
       }
     } catch (err) {
-      // Fallback chain
+      // Fallback chain: lfm25 → ollama → anthropic → template
       try {
-        if (this.activeProvider === 'ollama' && this.anthropicAvailable) {
+        if (this.activeProvider === 'lfm25' && this.ollamaAvailable) {
+          text = await this.generateWithOllama();
+        } else if ((this.activeProvider === 'lfm25' || this.activeProvider === 'ollama') && this.anthropicAvailable) {
           text = await this.generateWithAnthropic();
         } else {
           text = this.generateFromTemplates();
@@ -225,6 +247,33 @@ export class NarratorService extends EventEmitter {
     if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
     const data = await res.json() as { response: string };
     return data.response.trim();
+  }
+
+  // ── LFM2.5 (OpenAI-compatible local API) ─────────────────────────────────
+
+  private async generateWithLFM25(): Promise<string> {
+    const context = this.buildRichContext();
+    const systemPrompt = STYLE_PROMPTS[this.style];
+
+    const res = await fetch(this.lfm25Url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'LiquidAI/LFM2.5-1.2B-Instruct-MLX-8bit',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Current RF environment and signal intelligence:\n\n${context}\n\nProvide your narration now.` },
+        ],
+        max_tokens: 200,
+        temperature: this.style === 'dramatic' ? 0.8 : 0.6,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) throw new Error(`LFM2.5 error: ${res.status}`);
+    const data = await res.json() as { choices: Array<{ message: { content: string } }> };
+    return data.choices[0]?.message?.content?.trim() || '';
   }
 
   // ── Anthropic API ─────────────────────────────────────────────────────────
